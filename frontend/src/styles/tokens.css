@@ -1,0 +1,38 @@
+:root {
+  --paper: #edf1f4;
+  --surface: #ffffff;
+  --surface-2: #f4f6f8;
+  --ink: #14213d;
+  --muted: #566478;
+  --line: #ced7e0;
+  --signal: #2f45e0;
+  --signal-ink: #ffffff;
+  --buffer: #f0a81c;
+  --danger: #b8322a;
+  --ok: #1b7f55;
+
+  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --player-h: 96px;
+  --sidebar-w: 232px;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--signal) 45%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0e1624;
+    --surface: #162133;
+    --surface-2: #1b283d;
+    --ink: #e8eef6;
+    --muted: #95a5ba;
+    --line: #2a3a52;
+    --signal: #7f8fff;
+    --signal-ink: #0e1624;
+    --buffer: #f3b73a;
+    --danger: #ff8a80;
+    --ok: #5fd3a0;
+  }
+}
