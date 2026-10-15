@@ -22,4 +22,4 @@ cd backend && npm install && npm run dev
 `hotfix/<nombre>` sale de `main`.
 
 ## Equipo
-- (1-Jose Jhonathan Rosero Vega / 2- / 3- )
+- (1-Jose Jhonathan Rosero Vega / 2-Miguel Angel Arcila Rodriguez )
