@@ -1,34 +1,43 @@
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { computed, reactive, ref } from 'vue';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
+import { loginRequestSchema } from '@/api/contracts';
+import { env } from '@/config/env';
+import { useAuthStore } from '@/stores/auth';
 
-const emit = defineEmits<{ submit: [credentials: { email: string; password: string }] }>();
+const auth = useAuthStore();
+const route = useRoute();
+const router = useRouter();
 
-const form = reactive({ email: "", password: "" });
-const errors = ref<{ email?: string; password?: string }>({});
+const form = reactive({ email: '', password: '' });
+const fieldErrors = ref<{ email?: string; password?: string }>({});
 
-function validate(): boolean {
-  const next: { email?: string; password?: string } = {};
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-    next.email = "Escribe un correo válido";
-  }
-  if (form.password.length < 8) {
-    next.password = "La contraseña tiene al menos 8 caracteres";
-  }
-  errors.value = next;
-  return Object.keys(next).length === 0;
+const expired = computed(() => route.query.reason === 'expired');
+
+function safeRedirect(value: unknown): string {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/';
 }
 
-function onSubmit(): void {
-  if (!validate()) return;
-  emit("submit", { email: form.email.trim(), password: form.password });
+async function submit(): Promise<void> {
+  const parsed = loginRequestSchema.safeParse(form);
+  if (!parsed.success) {
+    const flat = parsed.error.flatten().fieldErrors;
+    fieldErrors.value = { email: flat.email?.[0], password: flat.password?.[0] };
+    return;
+  }
+  fieldErrors.value = {};
+  if (await auth.login(parsed.data)) {
+    await router.replace(safeRedirect(route.query.redirect));
+  }
 }
 </script>
 
 <template>
-  <main class="login">
-    <h1>Iniciar sesión</h1>
+  <section class="login">
+    <h1>Inicia sesión</h1>
+    <p v-if="expired" class="notice" role="status">Tu sesión expiró. Inicia sesión de nuevo.</p>
 
-    <form novalidate @submit.prevent="onSubmit">
+    <form novalidate @submit.prevent="submit">
       <div class="field">
         <label for="email">Correo</label>
         <input
@@ -36,11 +45,11 @@ function onSubmit(): void {
           v-model="form.email"
           type="email"
           autocomplete="username"
-          :aria-invalid="Boolean(errors.email)"
+          :aria-invalid="Boolean(fieldErrors.email)"
+          :aria-describedby="fieldErrors.email ? 'email-error' : undefined"
         />
-        <p v-if="errors.email" class="field-error">{{ errors.email }}</p>
+        <p v-if="fieldErrors.email" id="email-error" class="field-error">{{ fieldErrors.email }}</p>
       </div>
-
       <div class="field">
         <label for="password">Contraseña</label>
         <input
@@ -48,14 +57,29 @@ function onSubmit(): void {
           v-model="form.password"
           type="password"
           autocomplete="current-password"
-          :aria-invalid="Boolean(errors.password)"
+          :aria-invalid="Boolean(fieldErrors.password)"
+          :aria-describedby="fieldErrors.password ? 'password-error' : undefined"
         />
-        <p v-if="errors.password" class="field-error">{{ errors.password }}</p>
+        <p v-if="fieldErrors.password" id="password-error" class="field-error">{{ fieldErrors.password }}</p>
       </div>
 
-      <button type="submit" class="btn btn-primary">Iniciar sesión</button>
+      <p v-if="auth.error" class="field-error" role="alert">{{ auth.error }}</p>
+
+      <button type="submit" class="btn btn-primary" :disabled="auth.loading">
+        {{ auth.loading ? 'Entrando…' : 'Iniciar sesión' }}
+      </button>
     </form>
-  </main>
+
+    <p class="switch">
+      ¿No tienes cuenta?
+      <RouterLink :to="{ name: 'register', query: route.query.redirect ? { redirect: String(route.query.redirect) } : {} }">Crear cuenta</RouterLink>
+    </p>
+
+    <p v-if="env.useMock" class="demo muted">
+      Modo demo: <code>demo@musica.app</code> / <code>Demo1234!</code> o administración con
+      <code>admin@musica.app</code> / <code>Admin1234!</code>
+    </p>
+  </section>
 </template>
 
 <style scoped>
@@ -63,11 +87,25 @@ function onSubmit(): void {
   display: grid;
   gap: 1.25rem;
   width: min(100%, 380px);
-  margin: 0 auto;
-  padding: 3rem 1.25rem;
 }
 form {
   display: grid;
   gap: 1rem;
+}
+.notice {
+  padding: 0.6rem 0.75rem;
+  border-left: 4px solid var(--buffer);
+  background: var(--surface);
+}
+.switch a {
+  font-weight: 600;
+  color: var(--signal);
+}
+.demo {
+  font-size: 0.9rem;
+}
+code {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.85em;
 }
 </style>
