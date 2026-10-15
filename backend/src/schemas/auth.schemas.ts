@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-// Mismas reglas que el formulario del frontend (frontend/src/api/contracts.ts).
 export const registerSchema = z.object({
   displayName: z.string().trim().min(2, 'Escribe tu nombre (mínimo 2 letras)').max(60, 'Máximo 60 caracteres'),
   email: z.string().trim().toLowerCase().email('Escribe un correo válido').max(254),

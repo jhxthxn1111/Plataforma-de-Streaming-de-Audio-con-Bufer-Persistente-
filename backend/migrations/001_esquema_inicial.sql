@@ -1,5 +1,3 @@
--- Esquema inicial de Música: usuarios, sesiones, catálogo y analítica de reproducción.
-
 CREATE TABLE users (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email         text NOT NULL,
