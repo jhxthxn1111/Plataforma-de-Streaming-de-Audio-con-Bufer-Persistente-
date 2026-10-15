@@ -1,23 +1,29 @@
-import express from 'express';
-import type { NextFunction, Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import express from 'express';
+import type { Express } from 'express';
+import helmet from 'helmet';
 import { env } from './config/env';
+import { correlationId } from './middlewares/correlation-id';
+import { errorHandler, notFoundHandler } from './middlewares/error';
+import { requestLogger } from './middlewares/request-logger';
+import { routes } from './routes';
 
-const app = express();
+export function createApp(): Express {
+  const app = express();
+  app.disable('x-powered-by');
+  if (env.nodeEnv === 'production') app.set('trust proxy', 1); // detrás del proxy de la nube, para el límite por IP
+  app.use(helmet());
 
-app.use(cors({ origin: env.frontendUrl, credentials: true }));
-app.use(express.json());
+  app.use(correlationId);
+  app.use(requestLogger);
+  app.use(cors({ origin: env.frontendUrl, credentials: true, exposedHeaders: ['x-correlation-id'] }));
+  app.use(express.json({ limit: '100kb' }));
+  app.use(cookieParser());
 
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok' });
-});
+  app.use(routes);
 
-// Manejo global de errores
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('[backend] error:', err.message);
-  res.status(500).json({ message: 'Error interno del servidor' });
-});
-
-app.listen(env.port, () => {
-  console.log(`Servidor escuchando en http://localhost:${env.port}`);
-});
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+  return app;
+}
