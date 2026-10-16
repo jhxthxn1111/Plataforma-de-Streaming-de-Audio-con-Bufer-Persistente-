@@ -1,6 +1,5 @@
-import axios, { type AxiosInstance } from 'axios';
+import axios, { type AxiosAdapter, type AxiosInstance } from 'axios';
 import { env } from '@/config/env';
-import { mockAdapter } from '@/mock/adapter';
 import { newId } from '@/utils/id';
 import { authResponseSchema, type AuthResponse } from './contracts';
 import { toAppError } from './errors';
@@ -16,13 +15,19 @@ declare module 'axios' {
 const MAX_RETRIES = 2;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 
+/** El simulador solo se descarga cuando VITE_USE_MOCK=true. */
+const lazyMockAdapter: AxiosAdapter = async (config) => {
+  const { mockAdapter } = await import('@/mock/adapter');
+  return mockAdapter(config);
+};
+
 function createClient(): AxiosInstance {
   return axios.create({
     baseURL: env.apiBaseUrl,
     withCredentials: true, // envía la cookie HttpOnly del refresh token
     timeout: 15_000,
     headers: { 'Content-Type': 'application/json' },
-    ...(env.useMock ? { adapter: mockAdapter } : {}),
+    ...(env.useMock ? { adapter: lazyMockAdapter, } : {}),
   });
 }
 

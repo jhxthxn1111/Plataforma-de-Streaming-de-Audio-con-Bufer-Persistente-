@@ -6,7 +6,7 @@ import StatePanel from '@/components/StatePanel.vue';
 <template>
   <div class="page">
     <StatePanel kind="error" title="No tienes acceso a esta sección" message="Tu cuenta no tiene el rol necesario para verla.">
-      <RouterLink :to="{ name: 'library' }" class="btn btn-primary">Volver a Explorar</RouterLink>
+      <RouterLink :to="{ name: 'menu' }" class="btn btn-primary">Volver al Inicio</RouterLink>
     </StatePanel>
   </div>
 </template>

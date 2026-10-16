@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
-
+import IconGlyph from '@/components/IconGlyph.vue';
 
 const auth = useAuthStore();
 const emit = defineEmits<{ logout: [] }>();

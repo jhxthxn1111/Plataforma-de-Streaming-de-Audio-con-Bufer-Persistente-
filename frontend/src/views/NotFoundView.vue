@@ -6,7 +6,7 @@ import StatePanel from '@/components/StatePanel.vue';
 <template>
   <main class="nf">
     <StatePanel kind="empty" title="Página no encontrada" message="La dirección no existe o fue movida.">
-      <RouterLink :to="{ name: 'library' }" class="btn btn-primary">Ir al inicio</RouterLink>
+      <RouterLink :to="{ name: 'menu' }" class="btn btn-primary">Ir al inicio</RouterLink>
     </StatePanel>
   </main>
 </template>
