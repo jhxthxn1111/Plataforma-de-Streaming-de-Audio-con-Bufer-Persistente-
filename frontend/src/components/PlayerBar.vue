@@ -4,6 +4,9 @@
     <div v-if="streamError" class="stream-error-banner">
       <span>⚠️ {{ streamError }}</span>
     </div>
+    <div v-else-if="!isOnline" class="stream-error-banner offline-banner">
+      <span>Sin conexión: se reproduce lo guardado en disco.</span>
+    </div>
 
     <div class="player-grid">
       <!-- IZQUIERDA: Portada y datos de la canción -->
@@ -125,6 +128,13 @@
 
       <!-- DERECHA: Estado del Búfer HTTP 206 + Control de Volumen -->
       <div class="player-right">
+        <div v-if="isFromCache" class="buffer-pill is-cache" title="Reproduciendo desde IndexedDB">
+          <span>Desde caché local</span>
+        </div>
+        <div v-else-if="diskPercent > 0" class="buffer-pill" :title="`Guardado en disco: ${diskPercent}%`">
+          <span>Disco {{ diskPercent }}%</span>
+        </div>
+
         <div class="buffer-pill" :title="`Búfer almacenado: ${bufferedPercentage}%`">
           <span class="buffer-dot" :class="{ 'is-buffering': isBuffering }"></span>
           <span>Búfer {{ bufferedPercentage }}%</span>
@@ -162,7 +172,13 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useAudioPlayer } from '../composables/useAudioPlayer';
+import { useOfflineCacheStore } from '../stores/offlineCache.store';
+
+const offline = useOfflineCacheStore();
+const { isOnline } = storeToRefs(offline);
 
 const {
   currentTrack,
@@ -177,6 +193,7 @@ const {
   isShuffle,
   repeatMode,
   streamError,
+  isFromCache,
   togglePlay,
   seek,
   setVolume,
@@ -186,6 +203,9 @@ const {
   toggleShuffle,
   toggleRepeat,
 } = useAudioPlayer();
+
+// Porcentaje de la canción actual que ya está guardado en IndexedDB.
+const diskPercent = computed(() => offline.percentOf(currentTrack.value.fileName));
 
 const onSeek = (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -462,5 +482,15 @@ const formatTime = (seconds: number): string => {
   height: 12px;
   display: flex;
   align-items: center;
+}
+
+/* ---- Caché offline ---- */
+.offline-banner {
+  background: #78350f;
+  color: #fef3c7;
+}
+.buffer-pill.is-cache {
+  color: #052e16;
+  background: #4ade80;
 }
 </style>

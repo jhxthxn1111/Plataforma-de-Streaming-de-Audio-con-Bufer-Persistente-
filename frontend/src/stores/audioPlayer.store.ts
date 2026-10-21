@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { getCleanBaseUrl, getStreamUrl } from '../services/audioUrl';
+import { useOfflineCacheStore } from './offlineCache.store';
 
 export interface Track {
     id: string;
@@ -18,16 +20,13 @@ const fallbackTracks: Track[] = [
 ];
 
 const audio = new Audio();
-audio.preload = 'none'; // Evita descargar antes de tener la firma
+audio.preload = 'none';
 audio.crossOrigin = 'anonymous';
 let listenersAttached = false;
 
-const getCleanBaseUrl = (): string => {
-    const rawBase = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000';
-    return rawBase.replace(/\/api\/?$/, '').replace(/\/$/, '');
-};
-
 export const useAudioPlayerStore = defineStore('audioPlayer', () => {
+    const offline = useOfflineCacheStore();
+    
     const catalog = ref<Track[]>(fallbackTracks);
     const currentTrack = ref<Track>(fallbackTracks[0]!);
     const isPlaying = ref<boolean>(false);
@@ -41,8 +40,14 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     const repeatMode = ref<'off' | 'all' | 'one'>('off');
     const streamError = ref<string | null>(null);
     const activeFilter = ref<'all' | 'music' | 'buffered'>('all');
+    
+    // Variables para el control offline
+    const isFromCache = ref<boolean>(false);
+    let objectUrl: string | null = null;
+    let loadedTrackId: string | null = null;
+    let loadToken = 0;
 
-    // Solicita el ticket criptográfico al backend
+    // Obtiene el ticket temporal con HMAC
     const fetchSignedStreamUrl = async (fileName: string): Promise<string> => {
         try {
             const res = await fetch(`${getCleanBaseUrl()}/api/audio/ticket/${encodeURIComponent(fileName)}`);
@@ -52,8 +57,44 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             }
             throw new Error('Fallo al obtener firma de seguridad');
         } catch {
-            return `${getCleanBaseUrl()}/api/audio/stream/${encodeURIComponent(fileName)}`;
+            return getStreamUrl(fileName);
         }
+    };
+
+    /** Elige la fuente del audio: si está offline usa disco local, si no, pide streaming con ticket HMAC */
+    const loadSource = async (track: Track): Promise<void> => {
+        const token = ++loadToken;
+        await offline.whenReady();
+
+        let cachedUrl: string | null = null;
+        try {
+            cachedUrl = await offline.getBlobUrl(track);
+        } catch {
+            cachedUrl = null;
+        }
+
+        if (token !== loadToken) {
+            if (cachedUrl) URL.revokeObjectURL(cachedUrl);
+            return;
+        }
+
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+        }
+
+        if (cachedUrl) {
+            objectUrl = cachedUrl;
+            isFromCache.value = true;
+            bufferedPercentage.value = 100;
+            audio.src = cachedUrl;
+        } else {
+            isFromCache.value = false;
+            // Se usa el token HMAC para la reproducción online
+            audio.src = await fetchSignedStreamUrl(track.fileName);
+        }
+        loadedTrackId = track.id;
+        audio.load();
     };
 
     const savePersistentState = () => {
@@ -145,9 +186,19 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         audio.addEventListener('error', () => {
             isPlaying.value = false;
             isBuffering.value = false;
-            streamError.value = `Error 401: Token expirado o acceso denegado para ${currentTrack.value.fileName}.`;
+            streamError.value = !offline.isOnline && !isFromCache.value
+                ? 'Sin conexión: descarga la canción para escucharla offline.'
+                : `Error 401: Token expirado o acceso denegado para ${currentTrack.value.fileName}.`;
         });
 
+        watch(
+            () => offline.isOnline,
+            (online) => {
+                if (online && streamError.value?.startsWith('Sin conexión')) streamError.value = null;
+            }
+        );
+
+        void loadSource(currentTrack.value);
         fetchLocalCatalog();
     };
 
@@ -159,14 +210,14 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             ? (catalog.value.find(t => t.fileName === trackOrFileName) ?? catalog.value[0]!) 
             : trackOrFileName;
 
-        const isSameTrack = currentTrack.value.id === targetTrack.id;
+        const isSameTrack = currentTrack.value.id === targetTrack.id && loadedTrackId === targetTrack.id;
 
-        // Si cambiamos de canción, pausamos la anterior y reseteamos variables
         if (!isSameTrack) {
             audio.pause();
             currentTrack.value = targetTrack;
             bufferedPercentage.value = 0;
             currentTime.value = 0;
+            await loadSource(targetTrack);
         } else if (!audio.paused && isPlaying.value) {
             audio.pause();
             isPlaying.value = false;
@@ -175,23 +226,15 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
         isBuffering.value = true;
         try {
-            // Siempre pide un token fresco antes de darle play
-            const signedUrl = await fetchSignedStreamUrl(targetTrack.fileName);
-            
-            // Si la URL generada es diferente a la que tiene el audio actualmente (por firma nueva o track nuevo)
-            if (audio.src !== signedUrl) {
-                audio.src = signedUrl;
-                audio.load();
-            }
-
             await audio.play();
             isPlaying.value = true;
             isBuffering.value = false;
             savePersistentState();
+            if (offline.autoCache && offline.isOnline) void offline.download(targetTrack);
         } catch (err) {
             isPlaying.value = false;
             isBuffering.value = false;
-            streamError.value = `No autorizado: Error al reproducir ${targetTrack.fileName}.`;
+            streamError.value = `Error al reproducir ${targetTrack.fileName}.`;
         }
     };
 
@@ -200,11 +243,14 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             audio.pause();
             isPlaying.value = false;
         } else {
+            if (!audio.src || audio.src === window.location.href) {
+                await loadSource(currentTrack.value);
+            }
             await playTrack(currentTrack.value);
         }
     };
 
-    // NUEVO: Función para detener el audio por completo al cerrar sesión
+    // Función que apaga por completo el motor al salir de la AppNav
     const stopAudio = () => {
         audio.pause();
         audio.currentTime = 0;
@@ -269,7 +315,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     initAudioEngine();
 
     return {
-        catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter,
+        catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter, isFromCache,
         fetchLocalCatalog, playTrack, togglePlay, stopAudio, seek, setVolume, toggleMute, nextTrack, prevTrack, toggleShuffle, toggleRepeat,
     };
 });
