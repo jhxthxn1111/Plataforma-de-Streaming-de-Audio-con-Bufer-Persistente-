@@ -3,42 +3,16 @@
     <!-- Barra de búsqueda local y filtros estilo Spotify -->
     <div class="dashboard-topbar">
       <div class="filter-pills">
-        <button
-          type="button"
-          class="pill-btn"
-          :class="{ active: activeFilter === 'all' }"
-          @click="activeFilter = 'all'"
-        >
-          Todo
-        </button>
-        <button
-          type="button"
-          class="pill-btn"
-          :class="{ active: activeFilter === 'music' }"
-          @click="activeFilter = 'music'"
-        >
-          Música
-        </button>
-        <button
-          type="button"
-          class="pill-btn"
-          :class="{ active: activeFilter === 'buffered' }"
-          @click="activeFilter = 'buffered'"
-        >
-          Storage Local (Sin Copyright)
-        </button>
+        <button type="button" class="pill-btn" :class="{ active: activeFilter === 'all' }" @click="activeFilter = 'all'">Todo</button>
+        <button type="button" class="pill-btn" :class="{ active: activeFilter === 'music' }" @click="activeFilter = 'music'">Música</button>
+        <button type="button" class="pill-btn" :class="{ active: activeFilter === 'buffered' }" @click="activeFilter = 'buffered'">Storage Local (Sin Copyright)</button>
       </div>
 
       <div class="search-box">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" class="search-icon">
           <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"></path>
         </svg>
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="¿Qué quieres reproducir?"
-          class="search-input"
-        />
+        <input v-model="searchQuery" type="text" placeholder="¿Qué quieres reproducir?" class="search-input" />
       </div>
     </div>
 
@@ -56,12 +30,7 @@
         </div>
       </div>
 
-      <div
-        v-for="item in catalog.slice(0, 3)"
-        :key="'quick-' + item.id"
-        class="quick-card"
-        @click="playTrack(item)"
-      >
+      <div v-for="item in catalog.slice(0, 3)" :key="'quick-' + item.id" class="quick-card" @click="playTrack(item)">
         <div class="quick-cover" :style="{ background: item.coverGradient }">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#ffffff" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3" fill="#ffffff"></polygon>
@@ -85,13 +54,7 @@
       </div>
 
       <div class="cards-row">
-        <article
-          v-for="(track, index) in filteredTracks"
-          :key="track.id"
-          class="spotify-card"
-          :class="{ 'is-current': currentTrack.id === track.id }"
-          @click="playTrack(track)"
-        >
+        <article v-for="(track, index) in filteredTracks" :key="track.id" class="spotify-card" :class="{ 'is-current': currentTrack.id === track.id }" @click="playTrack(track)">
           <div class="card-artwork" :style="{ background: track.coverGradient }">
             <div class="artwork-overlay">
               <span class="artwork-tag">SIN COPY</span>
@@ -104,13 +67,7 @@
             </svg>
             <div class="artwork-file-chip">{{ track.fileName }}</div>
 
-            <button
-              type="button"
-              class="card-play-fab"
-              :class="{ 'always-visible': currentTrack.id === track.id && isPlaying }"
-              @click.stop="playTrack(track)"
-              :aria-label="currentTrack.id === track.id && isPlaying ? 'Pausar' : 'Reproducir'"
-            >
+            <button type="button" class="card-play-fab" :class="{ 'always-visible': currentTrack.id === track.id && isPlaying }" @click.stop="playTrack(track)" :aria-label="currentTrack.id === track.id && isPlaying ? 'Pausar' : 'Reproducir'">
               <svg v-if="currentTrack.id === track.id && isPlaying" viewBox="0 0 16 16" width="18" height="18" fill="currentColor">
                 <path d="M2.7 1a.7.7 0 0 0-.7.7v12.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7H2.7zm8 0a.7.7 0 0 0-.7.7v12.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V1.7a.7.7 0 0 0-.7-.7h-2.6z"></path>
               </svg>
@@ -135,22 +92,30 @@
         <span class="section-link">Búfer descargado: {{ bufferedPercentage }}%</span>
       </div>
 
+      <!-- NUEVO: Controles Offline -->
+      <div class="offline-toolbar">
+        <span v-if="!isOnline" class="offline-warning">Sin conexión: solo suenan las canciones guardadas en disco.</span>
+        <span v-if="!storageAvailable" class="offline-warning">Este navegador no permite guardar audio sin conexión.</span>
+        <template v-else>
+          <span>Caché local: {{ formatMegabytes(usedBytes) }} de {{ formatMegabytes(MAX_CACHE_BYTES) }}</span>
+          <span>{{ completeCount }} de {{ catalog.length }} canciones disponibles sin conexión</span>
+          <label>
+            <input type="checkbox" :checked="autoCache" @change="onAutoCacheChange" />
+            Guardar en disco lo que escucho
+          </label>
+        </template>
+      </div>
+
       <div class="tracklist-table">
         <div class="tracklist-header">
           <span>#</span>
           <span>TÍTULO (ARCHIVO LOCAL EN STORAGE)</span>
           <span>ÁLBUM</span>
-          <span>ESTADO DEL BÚFER</span>
+          <span>ESTADO DEL BÚFER / DESCARGA</span>
           <span style="text-align: right;">PESO</span>
         </div>
 
-        <div
-          v-for="(track, idx) in filteredTracks"
-          :key="'row-' + track.id"
-          class="tracklist-row"
-          :class="{ 'active-row': currentTrack.id === track.id }"
-          @click="playTrack(track)"
-        >
+        <div v-for="(track, idx) in filteredTracks" :key="'row-' + track.id" class="tracklist-row" :class="{ 'active-row': currentTrack.id === track.id }" @click="playTrack(track)">
           <span class="row-index">
             <span v-if="currentTrack.id === track.id && isPlaying" class="eq-bars">ılı</span>
             <span v-else>{{ idx + 1 }}</span>
@@ -166,9 +131,22 @@
 
           <span class="row-album">{{ track.album }}</span>
 
+          <!-- NUEVO: Indicadores de descarga individual por canción -->
           <span class="row-status">
             <span class="status-badge" :class="{ active: currentTrack.id === track.id }">
               {{ currentTrack.id === track.id ? `Streaming 206 (${bufferedPercentage}%)` : 'Listo en Storage' }}
+            </span>
+
+            <span v-if="storageAvailable" class="offline-controls" @click.stop>
+              <span v-if="offline.statusOf(track.fileName) === 'complete'" class="offline-badge is-complete">Offline ✓</span>
+              <span v-else-if="offline.statusOf(track.fileName) === 'downloading'" class="offline-badge">Disco {{ offline.percentOf(track.fileName) }}%</span>
+              <span v-else-if="offline.statusOf(track.fileName) === 'partial'" class="offline-badge">Parcial {{ offline.percentOf(track.fileName) }}%</span>
+
+              <button v-if="offline.statusOf(track.fileName) === 'downloading'" type="button" class="offline-btn" @click="offline.cancel(track)">Cancelar</button>
+              <button v-else-if="offline.statusOf(track.fileName) === 'complete'" type="button" class="offline-btn" @click="offline.remove(track)">Quitar</button>
+              <button v-else type="button" class="offline-btn" :disabled="!isOnline" @click="offline.download(track)">Descargar</button>
+
+              <span v-if="offline.errorOf(track.fileName)" class="offline-error">{{ offline.errorOf(track.fileName) }}</span>
             </span>
           </span>
 
@@ -181,7 +159,17 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useAudioPlayer } from '../composables/useAudioPlayer';
+import { MAX_CACHE_BYTES, useOfflineCacheStore } from '../stores/offlineCache.store';
+
+const offline = useOfflineCacheStore();
+const { isOnline, autoCache, usedBytes, completeCount } = storeToRefs(offline);
+const storageAvailable = offline.storageAvailable; // <-- Lo sacamos directo sin storeToRefs
+
+const onAutoCacheChange = (event: Event): void => {
+  offline.setAutoCache((event.target as HTMLInputElement).checked);
+};
 
 const {
   catalog,
@@ -206,6 +194,7 @@ const filteredTracks = computed(() => {
 });
 
 const formatMegabytes = (bytes?: number): string => {
+  if (bytes === 0) return '0 MB';
   if (!bytes || bytes <= 0) return '4.8 MB';
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
@@ -498,7 +487,7 @@ const formatMegabytes = (bytes?: number): string => {
   color: #9ca3af;
   margin: 0;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -597,5 +586,64 @@ const formatMegabytes = (bytes?: number): string => {
   background: rgba(34, 197, 94, 0.15);
   color: #4ade80;
   font-weight: 600;
+}
+
+/* ---- Caché offline (IndexedDB) ---- */
+.offline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  color: #b3b3b3;
+}
+.offline-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.offline-warning {
+  color: #fbbf24;
+  font-weight: 600;
+}
+.offline-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+.offline-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #e5e7eb;
+  background: rgba(255, 255, 255, 0.12);
+}
+.offline-badge.is-complete {
+  color: #052e16;
+  background: #4ade80;
+}
+.offline-btn {
+  padding: 2px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 11px;
+  cursor: pointer;
+}
+.offline-btn:hover {
+  border-color: #ffffff;
+  color: #ffffff;
+}
+.offline-error {
+  color: #f87171;
+  font-size: 11px;
 }
 </style>

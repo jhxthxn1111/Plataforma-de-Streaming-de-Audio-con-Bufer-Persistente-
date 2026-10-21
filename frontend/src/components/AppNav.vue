@@ -2,8 +2,10 @@
 import { RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import IconGlyph from '@/components/IconGlyph.vue';
+import { useAudioPlayerStore } from '@/stores/audioPlayer.store';
 
 const auth = useAuthStore();
+const playerStore = useAudioPlayerStore();
 const emit = defineEmits<{ logout: [] }>();
 </script>
 
@@ -24,7 +26,7 @@ const emit = defineEmits<{ logout: [] }>();
         <strong>{{ auth.user?.displayName }}</strong>
         <span class="muted">{{ auth.user?.email }}</span>
       </p>
-      <button type="button" class="btn" @click="emit('logout')">
+      <button type="button" class="btn" @click="playerStore.stopAudio(); emit('logout')">
         <IconGlyph name="logout" /> Cerrar sesión
       </button>
     </div>

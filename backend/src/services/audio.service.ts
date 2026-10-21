@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 export interface AudioStreamResult {
     stream: fs.ReadStream;
@@ -19,6 +20,9 @@ export interface LocalTrackMetadata {
 }
 
 export class AudioService {
+    // Clave secreta para firmar las URLs (en producción iría en el .env)
+    private readonly SECRET_KEY = process.env.AUDIO_SECRET_KEY || 'usc_ingenieria_secreta_2026';
+
     private getStorageDir(): string {
         const cwdStorage = path.resolve(process.cwd(), 'storage');
         if (fs.existsSync(cwdStorage)) {
@@ -34,20 +38,31 @@ export class AudioService {
 
     private formatTrackTitle(fileName: string, index: number): string {
         const base = fileName.replace(/\.mp3$/i, '').trim();
-        if (base.toLowerCase() === 'cancion') {
-            return 'Canción 1';
-        }
+        if (base.toLowerCase() === 'cancion') return 'Canción 1';
         const match = base.match(/^cancion\s*(\d+)$/i);
-        if (match && match[1]) {
-            return `Canción ${match[1]}`;
-        }
+        if (match && match[1]) return `Canción ${match[1]}`;
         const cleaned = base.replace(/[-_]+/g, ' ');
         return cleaned.charAt(0).toUpperCase() + cleaned.slice(1) || `Canción ${index + 1}`;
     }
 
+    // NUEVO: Genera una URL firmada válida por 5 minutos
+    public generateSignedUrl(fileName: string): string {
+        const expiration = Date.now() + 5 * 60 * 1000; // 5 minutos
+        const dataToSign = `${fileName}:${expiration}`;
+        const signature = crypto.createHmac('sha256', this.SECRET_KEY).update(dataToSign).digest('hex');
+        return `?expires=${expiration}&signature=${signature}`;
+    }
+
+    // NUEVO: Verifica que el token no haya sido alterado ni esté caducado
+    public verifySignature(fileName: string, expires: string, signature: string): boolean {
+        if (Date.now() > parseInt(expires, 10)) return false; // Expiró
+        const dataToSign = `${fileName}:${expires}`;
+        const expectedSignature = crypto.createHmac('sha256', this.SECRET_KEY).update(dataToSign).digest('hex');
+        return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+    }
+
     public async getLocalCatalog(): Promise<LocalTrackMetadata[]> {
         const storageDir = this.getStorageDir();
-
         try {
             await fs.promises.access(storageDir, fs.constants.F_OK);
         } catch {
@@ -67,18 +82,11 @@ export class AudioService {
             { gradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 55%, #a3e635 100%)', accent: '#22c55e' },
         ];
 
-        const defaultPalette = {
-            gradient: 'linear-gradient(135deg, #1e1b4b 0%, #7c3aed 50%, #ec4899 100%)',
-            accent: '#a855f7',
-        };
-
         const catalog: LocalTrackMetadata[] = [];
-
         for (let i = 0; i < mp3Files.length; i++) {
             const fileName = mp3Files[i] ?? 'cancion.mp3';
             const fullPath = path.join(storageDir, fileName);
             let sizeBytes = 0;
-
             try {
                 const stat = await fs.promises.stat(fullPath);
                 sizeBytes = stat.size;
@@ -86,8 +94,7 @@ export class AudioService {
                 sizeBytes = 0;
             }
 
-            const palette = palettes[i % palettes.length] ?? defaultPalette;
-
+         const palette = palettes[i % palettes.length] || { gradient: 'linear-gradient(135deg, #1e1b4b 0%, #7c3aed 50%, #ec4899 100%)', accent: '#a855f7' };
             catalog.push({
                 id: `local-track-${i + 1}`,
                 title: this.formatTrackTitle(fileName, i),
@@ -99,13 +106,11 @@ export class AudioService {
                 accentColor: palette.accent,
             });
         }
-
         return catalog;
     }
 
     public async getAudioStream(fileName: string, range?: string): Promise<AudioStreamResult> {
         const audioPath = this.resolveAudioPath(fileName);
-
         try {
             await fs.promises.access(audioPath, fs.constants.F_OK);
         } catch {
@@ -114,7 +119,6 @@ export class AudioService {
 
         const stat = await fs.promises.stat(audioPath);
         const fileSize = stat.size;
-
         const baseHeaders: Record<string, string | number> = {
             'Accept-Ranges': 'bytes',
             'Content-Type': 'audio/mpeg',
@@ -127,9 +131,7 @@ export class AudioService {
             const parts = range.replace(/bytes=/, '').split('-');
             const start = parseInt(parts[0] || '0', 10);
             const maxChunk = 1024 * 1024;
-            const requestedEnd = parts[1]
-                ? parseInt(parts[1] as string, 10)
-                : Math.min(start + maxChunk, fileSize - 1);
+            const requestedEnd = parts[1] ? parseInt(parts[1] as string, 10) : Math.min(start + maxChunk, fileSize - 1);
             const end = Math.min(requestedEnd, fileSize - 1);
 
             if (isNaN(start) || isNaN(end) || start >= fileSize || start > end) {
@@ -153,10 +155,7 @@ export class AudioService {
         const stream = fs.createReadStream(audioPath);
         return {
             statusCode: 200,
-            headers: {
-                ...baseHeaders,
-                'Content-Length': fileSize,
-            },
+            headers: { ...baseHeaders, 'Content-Length': fileSize },
             stream,
         };
     }

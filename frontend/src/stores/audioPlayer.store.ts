@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { getCleanBaseUrl, getStreamUrl } from '../services/audioUrl';
+import { useOfflineCacheStore } from './offlineCache.store';
 
 export interface Track {
     id: string;
@@ -12,72 +14,19 @@ export interface Track {
     accentColor?: string;
 }
 
-const STORAGE_KEY = 'persistent_audio_buffer_pinia_v3';
-
+const STORAGE_KEY = 'persistent_audio_buffer_pinia_v4';
 const fallbackTracks: Track[] = [
-    {
-        id: 'local-track-1',
-        title: 'Canción 1',
-        artist: 'Archivo local (cancion.mp3)',
-        album: 'Búfer Persistente • Storage Local',
-        fileName: 'cancion.mp3',
-        sizeBytes: 5033164,
-        coverGradient: 'linear-gradient(135deg, #1e1b4b 0%, #7c3aed 50%, #ec4899 100%)',
-        accentColor: '#a855f7',
-    },
-    {
-        id: 'local-track-2',
-        title: 'Canción 2',
-        artist: 'Archivo local (cancion2.mp3)',
-        album: 'Búfer Persistente • Storage Local',
-        fileName: 'cancion2.mp3',
-        sizeBytes: 5033164,
-        coverGradient: 'linear-gradient(135deg, #450a0a 0%, #dc2626 55%, #f97316 100%)',
-        accentColor: '#ef4444',
-    },
-    {
-        id: 'local-track-3',
-        title: 'Canción 3',
-        artist: 'Archivo local (cancion3.mp3)',
-        album: 'Búfer Persistente • Storage Local',
-        fileName: 'cancion3.mp3',
-        sizeBytes: 5033164,
-        coverGradient: 'linear-gradient(135deg, #042f2e 0%, #0d9488 55%, #22d3ee 100%)',
-        accentColor: '#14b8a6',
-    },
-    {
-        id: 'local-track-4',
-        title: 'Canción 4',
-        artist: 'Archivo local (cancion4.mp3)',
-        album: 'Búfer Persistente • Storage Local',
-        fileName: 'cancion4.mp3',
-        sizeBytes: 5033164,
-        coverGradient: 'linear-gradient(135deg, #0f172a 0%, #2563eb 55%, #818cf8 100%)',
-        accentColor: '#3b82f6',
-    },
-    {
-        id: 'local-track-5',
-        title: 'Canción 5',
-        artist: 'Archivo local (cancion5.mp3)',
-        album: 'Búfer Persistente • Storage Local',
-        fileName: 'cancion5.mp3',
-        sizeBytes: 5033164,
-        coverGradient: 'linear-gradient(135deg, #14532d 0%, #16a34a 55%, #a3e635 100%)',
-        accentColor: '#22c55e',
-    },
+    { id: 'local-track-1', title: 'Canción 1', artist: 'Storage Local', album: 'Búfer Persistente', fileName: 'cancion.mp3', sizeBytes: 5033164, coverGradient: 'linear-gradient(135deg, #1e1b4b 0%, #7c3aed 50%, #ec4899 100%)', accentColor: '#a855f7' }
 ];
 
 const audio = new Audio();
-audio.preload = 'metadata';
+audio.preload = 'none';
 audio.crossOrigin = 'anonymous';
 let listenersAttached = false;
 
-const getCleanBaseUrl = (): string => {
-    const rawBase = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000';
-    return rawBase.replace(/\/api\/?$/, '').replace(/\/$/, '');
-};
-
 export const useAudioPlayerStore = defineStore('audioPlayer', () => {
+    const offline = useOfflineCacheStore();
+    
     const catalog = ref<Track[]>(fallbackTracks);
     const currentTrack = ref<Track>(fallbackTracks[0]!);
     const isPlaying = ref<boolean>(false);
@@ -91,27 +40,74 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     const repeatMode = ref<'off' | 'all' | 'one'>('off');
     const streamError = ref<string | null>(null);
     const activeFilter = ref<'all' | 'music' | 'buffered'>('all');
+    
+    // Variables para el control offline
+    const isFromCache = ref<boolean>(false);
+    let objectUrl: string | null = null;
+    let loadedTrackId: string | null = null;
+    let loadToken = 0;
 
-    const getStreamUrl = (fileName: string): string => {
-        return `${getCleanBaseUrl()}/api/audio/stream/${encodeURIComponent(fileName)}`;
+    // Obtiene el ticket temporal con HMAC
+    const fetchSignedStreamUrl = async (fileName: string): Promise<string> => {
+        try {
+            const res = await fetch(`${getCleanBaseUrl()}/api/audio/ticket/${encodeURIComponent(fileName)}`);
+            const data = await res.json();
+            if (data.success && data.ticketUrl) {
+                return `${getCleanBaseUrl()}${data.ticketUrl}`;
+            }
+            throw new Error('Fallo al obtener firma de seguridad');
+        } catch {
+            return getStreamUrl(fileName);
+        }
+    };
+
+    /** Elige la fuente del audio: si está offline usa disco local, si no, pide streaming con ticket HMAC */
+    const loadSource = async (track: Track): Promise<void> => {
+        const token = ++loadToken;
+        await offline.whenReady();
+
+        let cachedUrl: string | null = null;
+        try {
+            cachedUrl = await offline.getBlobUrl(track);
+        } catch {
+            cachedUrl = null;
+        }
+
+        if (token !== loadToken) {
+            if (cachedUrl) URL.revokeObjectURL(cachedUrl);
+            return;
+        }
+
+        if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+        }
+
+        if (cachedUrl) {
+            objectUrl = cachedUrl;
+            isFromCache.value = true;
+            bufferedPercentage.value = 100;
+            audio.src = cachedUrl;
+        } else {
+            isFromCache.value = false;
+            // Se usa el token HMAC para la reproducción online
+            audio.src = await fetchSignedStreamUrl(track.fileName);
+        }
+        loadedTrackId = track.id;
+        audio.load();
     };
 
     const savePersistentState = () => {
         try {
-            localStorage.setItem(
-                STORAGE_KEY,
-                JSON.stringify({
-                    trackId: currentTrack.value.id,
-                    currentTime: currentTime.value,
-                    volume: volume.value,
-                    isMuted: isMuted.value,
-                    repeatMode: repeatMode.value,
-                    isShuffle: isShuffle.value,
-                })
-            );
-        } catch {
-            // Ignorar errores de cuota
-        }
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                trackId: currentTrack.value.id,
+                currentTime: currentTime.value,
+                volume: volume.value,
+                isMuted: isMuted.value,
+                repeatMode: repeatMode.value,
+                isShuffle: isShuffle.value,
+            }));
+        } catch {}
     };
 
     const updateBufferProgress = () => {
@@ -127,30 +123,23 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             const data = await response.json();
             if (Array.isArray(data.tracks) && data.tracks.length > 0) {
                 catalog.value = data.tracks;
-                const currentMatch = catalog.value.find(
-                    (t) => t.fileName === currentTrack.value.fileName || t.id === currentTrack.value.id
-                );
-                if (currentMatch) {
-                    currentTrack.value = currentMatch;
-                } else if (catalog.value[0]) {
-                    currentTrack.value = catalog.value[0];
-                }
+                const currentMatch = catalog.value.find(t => t.fileName === currentTrack.value.fileName || t.id === currentTrack.value.id);
+                if (currentMatch) currentTrack.value = currentMatch;
+                else if (catalog.value[0]) currentTrack.value = catalog.value[0];
             }
-        } catch {
-            // Si el backend no ha reiniciado, usa la lista de las 5 canciones locales
-        }
+        } catch {}
     };
 
     const initAudioEngine = () => {
         if (listenersAttached) return;
         listenersAttached = true;
-
+        
         let resumeTime = 0;
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
             if (saved) {
                 const parsed = JSON.parse(saved);
-                const found = catalog.value.find((t) => t.id === parsed.trackId);
+                const found = catalog.value.find(t => t.id === parsed.trackId);
                 if (found) currentTrack.value = found;
                 if (typeof parsed.volume === 'number') volume.value = parsed.volume;
                 if (typeof parsed.isMuted === 'boolean') isMuted.value = parsed.isMuted;
@@ -158,12 +147,9 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
                 if (typeof parsed.isShuffle === 'boolean') isShuffle.value = parsed.isShuffle;
                 if (typeof parsed.currentTime === 'number') resumeTime = parsed.currentTime;
             }
-        } catch {
-            // Ignorar JSON corrupto
-        }
+        } catch {}
 
         audio.volume = isMuted.value ? 0 : volume.value;
-        audio.src = getStreamUrl(currentTrack.value.fileName);
 
         audio.addEventListener('loadedmetadata', () => {
             duration.value = Number.isFinite(audio.duration) ? audio.duration : 0;
@@ -183,24 +169,11 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         });
 
         audio.addEventListener('progress', updateBufferProgress);
-
-        audio.addEventListener('play', () => {
-            isPlaying.value = true;
-            streamError.value = null;
-        });
-
-        audio.addEventListener('pause', () => {
-            isPlaying.value = false;
-        });
-
-        audio.addEventListener('waiting', () => {
-            isBuffering.value = true;
-        });
-
-        audio.addEventListener('canplay', () => {
-            isBuffering.value = false;
-        });
-
+        audio.addEventListener('play', () => { isPlaying.value = true; streamError.value = null; });
+        audio.addEventListener('pause', () => isPlaying.value = false);
+        audio.addEventListener('waiting', () => isBuffering.value = true);
+        audio.addEventListener('canplay', () => isBuffering.value = false);
+        
         audio.addEventListener('ended', () => {
             if (repeatMode.value === 'one') {
                 audio.currentTime = 0;
@@ -213,9 +186,19 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         audio.addEventListener('error', () => {
             isPlaying.value = false;
             isBuffering.value = false;
-            streamError.value = `No se pudo cargar ${currentTrack.value.fileName} desde backend/storage.`;
+            streamError.value = !offline.isOnline && !isFromCache.value
+                ? 'Sin conexión: descarga la canción para escucharla offline.'
+                : `Error 401: Token expirado o acceso denegado para ${currentTrack.value.fileName}.`;
         });
 
+        watch(
+            () => offline.isOnline,
+            (online) => {
+                if (online && streamError.value?.startsWith('Sin conexión')) streamError.value = null;
+            }
+        );
+
+        void loadSource(currentTrack.value);
         fetchLocalCatalog();
     };
 
@@ -223,67 +206,57 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         initAudioEngine();
         streamError.value = null;
 
-        let targetTrack: Track;
-        if (typeof trackOrFileName === 'string') {
-            targetTrack =
-                catalog.value.find((t) => t.fileName === trackOrFileName) ?? catalog.value[0]!;
-        } else {
-            targetTrack = trackOrFileName;
-        }
+        let targetTrack = typeof trackOrFileName === 'string' 
+            ? (catalog.value.find(t => t.fileName === trackOrFileName) ?? catalog.value[0]!) 
+            : trackOrFileName;
 
-        const targetUrl = getStreamUrl(targetTrack.fileName);
-        const isSameTrack = currentTrack.value.id === targetTrack.id;
+        const isSameTrack = currentTrack.value.id === targetTrack.id && loadedTrackId === targetTrack.id;
 
-        if (!isSameTrack || audio.src !== targetUrl) {
+        if (!isSameTrack) {
+            audio.pause();
             currentTrack.value = targetTrack;
             bufferedPercentage.value = 0;
             currentTime.value = 0;
-            audio.src = targetUrl;
-            audio.load();
-        } else if (!audio.paused) {
+            await loadSource(targetTrack);
+        } else if (!audio.paused && isPlaying.value) {
             audio.pause();
             isPlaying.value = false;
             return;
         }
 
+        isBuffering.value = true;
         try {
-            isBuffering.value = true;
             await audio.play();
             isPlaying.value = true;
             isBuffering.value = false;
             savePersistentState();
+            if (offline.autoCache && offline.isOnline) void offline.download(targetTrack);
         } catch (err) {
             isPlaying.value = false;
             isBuffering.value = false;
             streamError.value = `Error al reproducir ${targetTrack.fileName}.`;
-            console.error(err);
         }
     };
 
     const togglePlay = async () => {
-        initAudioEngine();
-        streamError.value = null;
-
-        if (!audio.src) {
-            audio.src = getStreamUrl(currentTrack.value.fileName);
-        }
-
         if (isPlaying.value && !audio.paused) {
             audio.pause();
             isPlaying.value = false;
         } else {
-            try {
-                isBuffering.value = true;
-                await audio.play();
-                isPlaying.value = true;
-                isBuffering.value = false;
-            } catch (err) {
-                isPlaying.value = false;
-                isBuffering.value = false;
-                streamError.value = 'Error al reanudar el búfer de audio.';
-                console.error(err);
+            if (!audio.src || audio.src === window.location.href) {
+                await loadSource(currentTrack.value);
             }
+            await playTrack(currentTrack.value);
         }
+    };
+
+    // Función que apaga por completo el motor al salir de la AppNav
+    const stopAudio = () => {
+        audio.pause();
+        audio.currentTime = 0;
+        isPlaying.value = false;
+        isBuffering.value = false;
+        currentTime.value = 0;
     };
 
     const seek = (seconds: number) => {
@@ -309,50 +282,28 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     };
 
     const nextTrack = () => {
-        const list = catalog.value;
-        if (list.length === 0) return;
-
-        if (isShuffle.value && list.length > 1) {
-            const others = list.filter((t) => t.id !== currentTrack.value.id);
-            const randomTrack = others[Math.floor(Math.random() * others.length)];
-            if (randomTrack) {
-                playTrack(randomTrack);
-                return;
-            }
+        if (catalog.value.length === 0) return;
+        if (isShuffle.value && catalog.value.length > 1) {
+            const others = catalog.value.filter(t => t.id !== currentTrack.value.id);
+            playTrack(others[Math.floor(Math.random() * others.length)]!);
+            return;
         }
-
-        const currentIndex = list.findIndex((t) => t.id === currentTrack.value.id);
-        const nextIndex = (currentIndex + 1) % list.length;
-        const nextItem = list[nextIndex];
-        if (nextItem) {
-            playTrack(nextItem);
-        }
+        const currentIndex = catalog.value.findIndex(t => t.id === currentTrack.value.id);
+        const nextItem = catalog.value[(currentIndex + 1) % catalog.value.length];
+        if (nextItem) playTrack(nextItem);
     };
 
     const prevTrack = () => {
-        if (audio.currentTime > 3) {
-            seek(0);
-            return;
-        }
-        const list = catalog.value;
-        if (list.length === 0) return;
-        const currentIndex = list.findIndex((t) => t.id === currentTrack.value.id);
-        const prevIndex = (currentIndex - 1 + list.length) % list.length;
-        const prevItem = list[prevIndex];
-        if (prevItem) {
-            playTrack(prevItem);
-        }
+        if (audio.currentTime > 3) { seek(0); return; }
+        if (catalog.value.length === 0) return;
+        const currentIndex = catalog.value.findIndex(t => t.id === currentTrack.value.id);
+        const prevItem = catalog.value[(currentIndex - 1 + catalog.value.length) % catalog.value.length];
+        if (prevItem) playTrack(prevItem);
     };
 
-    const toggleShuffle = () => {
-        isShuffle.value = !isShuffle.value;
-        savePersistentState();
-    };
-
+    const toggleShuffle = () => { isShuffle.value = !isShuffle.value; savePersistentState(); };
     const toggleRepeat = () => {
-        if (repeatMode.value === 'off') repeatMode.value = 'all';
-        else if (repeatMode.value === 'all') repeatMode.value = 'one';
-        else repeatMode.value = 'off';
+        repeatMode.value = repeatMode.value === 'off' ? 'all' : (repeatMode.value === 'all' ? 'one' : 'off');
         savePersistentState();
     };
 
@@ -364,29 +315,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     initAudioEngine();
 
     return {
-        catalog,
-        currentTrack,
-        isPlaying,
-        isBuffering,
-        currentTime,
-        duration,
-        bufferedPercentage,
-        progressPercentage,
-        volume,
-        isMuted,
-        isShuffle,
-        repeatMode,
-        streamError,
-        activeFilter,
-        fetchLocalCatalog,
-        playTrack,
-        togglePlay,
-        seek,
-        setVolume,
-        toggleMute,
-        nextTrack,
-        prevTrack,
-        toggleShuffle,
-        toggleRepeat,
+        catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter, isFromCache,
+        fetchLocalCatalog, playTrack, togglePlay, stopAudio, seek, setVolume, toggleMute, nextTrack, prevTrack, toggleShuffle, toggleRepeat,
     };
 });
