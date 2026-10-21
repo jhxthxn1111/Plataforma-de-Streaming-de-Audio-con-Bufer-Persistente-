@@ -61,8 +61,8 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         }
     };
 
-    /** Elige la fuente del audio: si está offline usa disco local, si no, pide streaming con ticket HMAC */
-    const loadSource = async (track: Track): Promise<void> => {
+    /** Elige la fuente del audio: si está en disco usa IndexedDB; si no hay internet y no está en disco, bloquea el streaming */
+    const loadSource = async (track: Track, silent = false): Promise<boolean> => {
         const token = ++loadToken;
         await offline.whenReady();
 
@@ -75,7 +75,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
         if (token !== loadToken) {
             if (cachedUrl) URL.revokeObjectURL(cachedUrl);
-            return;
+            return false;
         }
 
         if (objectUrl) {
@@ -88,13 +88,31 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             isFromCache.value = true;
             bufferedPercentage.value = 100;
             audio.src = cachedUrl;
-        } else {
-            isFromCache.value = false;
-            // Se usa el token HMAC para la reproducción online
-            audio.src = await fetchSignedStreamUrl(track.fileName);
+            loadedTrackId = track.id;
+            audio.load();
+            return true;
         }
+
+        // BLOQUEO ESTRICTO: Si NO está descargada en disco y estamos SIN CONEXIÓN, no permitir streaming
+        if (!offline.isOnline) {
+            isFromCache.value = false;
+            bufferedPercentage.value = 0;
+            loadedTrackId = null;
+            audio.pause();
+            audio.removeAttribute('src');
+            audio.load();
+            if (!silent) {
+                streamError.value = `Sin conexión: "${track.title}" no está guardada en disco. Descárgala para escucharla offline.`;
+            }
+            return false;
+        }
+
+        isFromCache.value = false;
+        // Se usa el token HMAC para la reproducción online
+        audio.src = await fetchSignedStreamUrl(track.fileName);
         loadedTrackId = track.id;
         audio.load();
+        return true;
     };
 
     const savePersistentState = () => {
@@ -111,6 +129,10 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     };
 
     const updateBufferProgress = () => {
+        if (isFromCache.value) {
+            bufferedPercentage.value = 100;
+            return;
+        }
         if (!audio.duration || audio.buffered.length === 0) return;
         const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
         bufferedPercentage.value = Math.min(100, Math.round((bufferedEnd / audio.duration) * 100));
@@ -193,12 +215,49 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
         watch(
             () => offline.isOnline,
-            (online) => {
-                if (online && streamError.value?.startsWith('Sin conexión')) streamError.value = null;
+            async (online) => {
+                if (online && streamError.value?.startsWith('Sin conexión')) {
+                    streamError.value = null;
+                } else if (!online && !isFromCache.value) {
+                    // Si se corta el internet mientras estaba cargada o sonando por streaming, verificar si está en disco
+                    let cached: string | null = null;
+                    try {
+                        cached = await offline.getBlobUrl(currentTrack.value);
+                    } catch {
+                        cached = null;
+                    }
+
+                    if (cached) {
+                        const prevTime = audio.currentTime;
+                        const wasPlaying = !audio.paused && isPlaying.value;
+                        if (objectUrl) URL.revokeObjectURL(objectUrl);
+                        objectUrl = cached;
+                        isFromCache.value = true;
+                        bufferedPercentage.value = 100;
+                        audio.src = cached;
+                        loadedTrackId = currentTrack.value.id;
+                        audio.load();
+                        audio.currentTime = prevTime;
+                        if (wasPlaying) void audio.play().catch(() => {});
+                    } else {
+                        // No está en disco: cortar el streaming inmediatamente
+                        const wasPlaying = !audio.paused && isPlaying.value;
+                        audio.pause();
+                        audio.removeAttribute('src');
+                        audio.load();
+                        loadedTrackId = null;
+                        isPlaying.value = false;
+                        isBuffering.value = false;
+                        bufferedPercentage.value = 0;
+                        if (wasPlaying) {
+                            streamError.value = `Sin conexión: "${currentTrack.value.title}" se detuvo porque no está guardada en disco.`;
+                        }
+                    }
+                }
             }
         );
 
-        void loadSource(currentTrack.value);
+        void loadSource(currentTrack.value, true);
         fetchLocalCatalog();
     };
 
@@ -212,16 +271,30 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
         const isSameTrack = currentTrack.value.id === targetTrack.id && loadedTrackId === targetTrack.id;
 
-        if (!isSameTrack) {
-            audio.pause();
-            currentTrack.value = targetTrack;
-            bufferedPercentage.value = 0;
-            currentTime.value = 0;
-            await loadSource(targetTrack);
-        } else if (!audio.paused && isPlaying.value) {
+        if (isSameTrack && !audio.paused && isPlaying.value) {
             audio.pause();
             isPlaying.value = false;
             return;
+        }
+
+        // Recargar y validar fuente siempre que cambie de pista, estemos offline o aún no venga de caché
+        if (!isSameTrack || !offline.isOnline || !isFromCache.value) {
+            const previousTime = isSameTrack ? audio.currentTime : 0;
+            audio.pause();
+            currentTrack.value = targetTrack;
+            if (!isSameTrack) {
+                bufferedPercentage.value = 0;
+                currentTime.value = 0;
+            }
+            const canPlay = await loadSource(targetTrack);
+            if (!canPlay) {
+                isPlaying.value = false;
+                isBuffering.value = false;
+                return;
+            }
+            if (isSameTrack && previousTime > 0) {
+                audio.currentTime = previousTime;
+            }
         }
 
         isBuffering.value = true;
@@ -234,7 +307,9 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         } catch (err) {
             isPlaying.value = false;
             isBuffering.value = false;
-            streamError.value = `Error al reproducir ${targetTrack.fileName}.`;
+            streamError.value = !offline.isOnline && !isFromCache.value
+                ? `Sin conexión: "${targetTrack.title}" no está guardada en disco.`
+                : `Error al reproducir ${targetTrack.fileName}.`;
         }
     };
 
@@ -243,9 +318,6 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             audio.pause();
             isPlaying.value = false;
         } else {
-            if (!audio.src || audio.src === window.location.href) {
-                await loadSource(currentTrack.value);
-            }
             await playTrack(currentTrack.value);
         }
     };
