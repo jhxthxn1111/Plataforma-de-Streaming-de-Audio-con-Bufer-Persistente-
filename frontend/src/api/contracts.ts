@@ -41,6 +41,25 @@ export const registerFormSchema = registerRequestSchema
     message: 'Las contraseñas no coinciden',
   });
 
+export const updateProfileRequestSchema = z.object({
+  displayName: registerRequestSchema.shape.displayName,
+});
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
+
+export const changePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1, 'Escribe tu contraseña actual'),
+  newPassword: registerRequestSchema.shape.password,
+});
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+
+/** Formulario de cambio de contraseña: añade la confirmación, que no se envía al servidor. */
+export const changePasswordFormSchema = changePasswordRequestSchema
+  .extend({ confirmPassword: z.string() })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'Las contraseñas no coinciden',
+  });
+
 export const authResponseSchema = z.object({
   accessToken: z.string().min(1),
   expiresIn: z.number().int().positive(),

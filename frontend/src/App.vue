@@ -23,7 +23,6 @@ html, body, #app {
   margin: 0;
 }
 
-/* Da espacio en la parte inferior del menú lateral para que la barra tipo Spotify no tape 'Cerrar sesión' */
 aside, nav {
   padding-bottom: 105px !important;
   box-sizing: border-box;

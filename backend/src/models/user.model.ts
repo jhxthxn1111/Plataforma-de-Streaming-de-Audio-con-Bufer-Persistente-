@@ -43,3 +43,12 @@ export async function create(data: { email: string; displayName: string; passwor
   if (!row) throw new Error('No se pudo crear el usuario');
   return toRecord(row);
 }
+
+export async function updateDisplayName(id: string, displayName: string): Promise<UserRecord | null> {
+  const { rows } = await pool.query<UserRow>(`UPDATE users SET display_name = $2 WHERE id = $1 RETURNING ${COLUMNS}`, [id, displayName]);
+  return rows[0] ? toRecord(rows[0]) : null;
+}
+
+export async function updatePasswordHash(id: string, passwordHash: string): Promise<void> {
+  await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [id, passwordHash]);
+}

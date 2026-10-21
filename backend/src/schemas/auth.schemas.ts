@@ -17,3 +17,12 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Escribe tu contraseña').max(128),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const updateProfileSchema = z.object({ displayName: registerSchema.shape.displayName });
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Escribe tu contraseña actual').max(128),
+  newPassword: registerSchema.shape.password,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

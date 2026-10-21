@@ -103,9 +103,14 @@
           
           <div class="progress-wrapper">
             <!-- Capa 1: Fondo gris oscuro -->
-            <div class="progress-rail">
-              <!-- Capa 2: Búfer descargado (HTTP 206) -->
-              <div class="progress-buffered" :style="{ width: `${bufferedPercentage}%` }"></div>
+            <div class="progress-rail" role="img" :aria-label="`Búfer descargado: ${bufferedPercentage}%`">
+              <!-- Capa 2: cada tramo descargado (HTTP 206) se dibuja por separado -->
+              <div
+                v-for="(range, i) in bufferedRanges"
+                :key="i"
+                class="progress-buffered"
+                :style="{ left: `${range.start}%`, width: `${range.end - range.start}%` }"
+              ></div>
               <!-- Capa 3: Tiempo reproducido actual -->
               <div class="progress-fill" :style="{ width: `${progressPercentage}%` }"></div>
             </div>
@@ -187,6 +192,7 @@ const {
   currentTime,
   duration,
   bufferedPercentage,
+  bufferedRanges,
   progressPercentage,
   volume,
   isMuted,
@@ -407,9 +413,9 @@ const formatTime = (seconds: number): string => {
 .progress-rail {
   position: relative;
   width: 100%;
-  height: 4px;
+  height: 6px;
   background-color: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
@@ -418,8 +424,9 @@ const formatTime = (seconds: number): string => {
   top: 0;
   left: 0;
   height: 100%;
-  background-color: rgba(255, 255, 255, 0.35);
-  transition: width 0.2s ease;
+  background-color: var(--buffer);
+  opacity: 0.65;
+  transition: left 0.2s ease, width 0.2s ease;
 }
 
 .progress-fill {
@@ -427,13 +434,8 @@ const formatTime = (seconds: number): string => {
   top: 0;
   left: 0;
   height: 100%;
-  background-color: #ffffff;
-  border-radius: 2px;
-}
-
-.progress-wrapper:hover .progress-fill,
-.volume-wrapper:hover .progress-fill {
   background-color: #818cf8;
+  border-radius: 2px;
 }
 
 .seek-slider {

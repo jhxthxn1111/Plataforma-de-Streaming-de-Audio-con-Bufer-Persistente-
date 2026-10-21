@@ -34,6 +34,8 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     const currentTime = ref<number>(0);
     const duration = ref<number>(0);
     const bufferedPercentage = ref<number>(0);
+    /** Tramos ya descargados, en % de la duración. Pueden ser varios si se saltó por la canción. */
+    const bufferedRanges = ref<{ start: number; end: number }[]>([]);
     const volume = ref<number>(0.8);
     const isMuted = ref<boolean>(false);
     const isShuffle = ref<boolean>(false);
@@ -87,6 +89,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             objectUrl = cachedUrl;
             isFromCache.value = true;
             bufferedPercentage.value = 100;
+            bufferedRanges.value = [{ start: 0, end: 100 }];
             audio.src = cachedUrl;
             loadedTrackId = track.id;
             audio.load();
@@ -97,6 +100,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         if (!offline.isOnline) {
             isFromCache.value = false;
             bufferedPercentage.value = 0;
+            bufferedRanges.value = [];
             loadedTrackId = null;
             audio.pause();
             audio.removeAttribute('src');
@@ -131,11 +135,20 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     const updateBufferProgress = () => {
         if (isFromCache.value) {
             bufferedPercentage.value = 100;
+            bufferedRanges.value = [{ start: 0, end: 100 }];
             return;
         }
         if (!audio.duration || audio.buffered.length === 0) return;
         const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
         bufferedPercentage.value = Math.min(100, Math.round((bufferedEnd / audio.duration) * 100));
+        const ranges: { start: number; end: number }[] = [];
+        for (let i = 0; i < audio.buffered.length; i += 1) {
+            ranges.push({
+                start: (audio.buffered.start(i) / audio.duration) * 100,
+                end: Math.min(100, (audio.buffered.end(i) / audio.duration) * 100),
+            });
+        }
+        bufferedRanges.value = ranges;
     };
 
     const fetchLocalCatalog = async () => {
@@ -234,6 +247,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
                         objectUrl = cached;
                         isFromCache.value = true;
                         bufferedPercentage.value = 100;
+                        bufferedRanges.value = [{ start: 0, end: 100 }];
                         audio.src = cached;
                         loadedTrackId = currentTrack.value.id;
                         audio.load();
@@ -249,6 +263,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
                         isPlaying.value = false;
                         isBuffering.value = false;
                         bufferedPercentage.value = 0;
+                        bufferedRanges.value = [];
                         if (wasPlaying) {
                             streamError.value = `Sin conexión: "${currentTrack.value.title}" se detuvo porque no está guardada en disco.`;
                         }
@@ -284,6 +299,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
             currentTrack.value = targetTrack;
             if (!isSameTrack) {
                 bufferedPercentage.value = 0;
+                bufferedRanges.value = [];
                 currentTime.value = 0;
             }
             const canPlay = await loadSource(targetTrack);
@@ -387,7 +403,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     initAudioEngine();
 
     return {
-        catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter, isFromCache,
+        catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, bufferedRanges, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter, isFromCache,
         fetchLocalCatalog, playTrack, togglePlay, stopAudio, seek, setVolume, toggleMute, nextTrack, prevTrack, toggleShuffle, toggleRepeat,
     };
 });

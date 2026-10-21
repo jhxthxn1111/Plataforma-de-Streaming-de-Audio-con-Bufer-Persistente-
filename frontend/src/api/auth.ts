@@ -1,4 +1,13 @@
-import { authResponseSchema, type AuthResponse, type LoginRequest, type RegisterRequest } from './contracts';
+import {
+  authResponseSchema,
+  userSchema,
+  type AuthResponse,
+  type ChangePasswordRequest,
+  type LoginRequest,
+  type RegisterRequest,
+  type UpdateProfileRequest,
+  type User,
+} from './contracts';
 import { http } from './http';
 import { tokenStore } from './tokenStore';
 
@@ -26,3 +35,16 @@ export async function logout(): Promise<void> {
 }
 
 export { refreshSession as restoreSession } from './http';
+
+export async function updateProfile(payload: UpdateProfileRequest): Promise<User> {
+  const { data } = await http.patch<unknown>('/auth/me', payload);
+  return userSchema.parse(data);
+}
+
+/** El servidor cierra las demás sesiones y abre una nueva aquí, con su propio access token. */
+export async function changePassword(payload: ChangePasswordRequest): Promise<AuthResponse> {
+  const { data } = await http.post<unknown>('/auth/password', payload);
+  const parsed = authResponseSchema.parse(data);
+  tokenStore.set(parsed.accessToken);
+  return parsed;
+}
