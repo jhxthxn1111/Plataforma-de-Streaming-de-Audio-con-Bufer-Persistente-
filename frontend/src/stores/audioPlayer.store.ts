@@ -42,7 +42,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     const streamError = ref<string | null>(null);
     const activeFilter = ref<'all' | 'music' | 'buffered'>('all');
 
-    // NUEVO: Solicita el ticket criptográfico al backend
+    // Solicita el ticket criptográfico al backend
     const fetchSignedStreamUrl = async (fileName: string): Promise<string> => {
         try {
             const res = await fetch(`${getCleanBaseUrl()}/api/audio/ticket/${encodeURIComponent(fileName)}`);
@@ -204,6 +204,15 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         }
     };
 
+    // NUEVO: Función para detener el audio por completo al cerrar sesión
+    const stopAudio = () => {
+        audio.pause();
+        audio.currentTime = 0;
+        isPlaying.value = false;
+        isBuffering.value = false;
+        currentTime.value = 0;
+    };
+
     const seek = (seconds: number) => {
         if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
         const clamped = Math.max(0, Math.min(seconds, audio.duration));
@@ -261,6 +270,6 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
     return {
         catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter,
-        fetchLocalCatalog, playTrack, togglePlay, seek, setVolume, toggleMute, nextTrack, prevTrack, toggleShuffle, toggleRepeat,
+        fetchLocalCatalog, playTrack, togglePlay, stopAudio, seek, setVolume, toggleMute, nextTrack, prevTrack, toggleShuffle, toggleRepeat,
     };
 });
