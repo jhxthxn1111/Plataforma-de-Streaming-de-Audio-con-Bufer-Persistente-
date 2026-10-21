@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { env } from '../config/env';
 import { AppError } from '../errors/AppError';
-import type { LoginInput, RegisterInput } from '../schemas/auth.schemas';
+import type { ChangePasswordInput, LoginInput, RegisterInput, UpdateProfileInput } from '../schemas/auth.schemas';
 import * as authService from '../services/auth.service';
 
 const REFRESH_COOKIE = 'refresh_token';
@@ -50,4 +50,14 @@ export async function logout(req: Request, res: Response): Promise<void> {
 export async function me(req: Request, res: Response): Promise<void> {
   if (!req.auth) throw new AppError(401, 'unauthorized', 'Sesión no válida.');
   res.json(await authService.getProfile(req.auth.userId));
+}
+
+export async function updateProfile(req: Request, res: Response): Promise<void> {
+  if (!req.auth) throw new AppError(401, 'unauthorized', 'Sesión no válida.');
+  res.json(await authService.updateProfile(req.auth.userId, req.body as UpdateProfileInput));
+}
+
+export async function changePassword(req: Request, res: Response): Promise<void> {
+  if (!req.auth) throw new AppError(401, 'unauthorized', 'Sesión no válida.');
+  sendSession(res, 200, await authService.changePassword(req.auth.userId, req.body as ChangePasswordInput));
 }

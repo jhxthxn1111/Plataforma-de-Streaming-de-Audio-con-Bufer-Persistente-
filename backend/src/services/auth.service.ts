@@ -4,7 +4,7 @@ import { isUniqueViolation } from '../db/errors';
 import { AppError } from '../errors/AppError';
 import * as refreshModel from '../models/refresh-token.model';
 import * as userModel from '../models/user.model';
-import type { LoginInput, RegisterInput } from '../schemas/auth.schemas';
+import type { ChangePasswordInput, LoginInput, RegisterInput, UpdateProfileInput } from '../schemas/auth.schemas';
 import type { PublicUser } from '../types/auth';
 import { logger } from '../utils/logger';
 import { burnPasswordCheck, hashPassword, verifyPassword } from '../utils/password';
@@ -110,4 +110,25 @@ export async function getProfile(userId: string): Promise<PublicUser> {
   const user = await userModel.findById(userId);
   if (!user) throw new AppError(401, 'unauthorized', 'Sesión no válida.');
   return toPublic(user);
+}
+
+export async function updateProfile(userId: string, input: UpdateProfileInput): Promise<PublicUser> {
+  const user = await userModel.updateDisplayName(userId, input.displayName);
+  if (!user) throw new AppError(401, 'unauthorized', 'Sesión no válida.');
+  return toPublic(user);
+}
+
+/** Cambia la contraseña, cierra todas las sesiones y abre una nueva en el dispositivo actual. */
+export async function changePassword(userId: string, input: ChangePasswordInput): Promise<AuthResult> {
+  const user = await userModel.findById(userId);
+  if (!user) throw new AppError(401, 'unauthorized', 'Sesión no válida.');
+  if (!(await verifyPassword(user.passwordHash, input.currentPassword))) {
+    throw new AppError(400, 'wrong_password', 'La contraseña actual no es correcta.');
+  }
+  if (input.currentPassword === input.newPassword) {
+    throw new AppError(422, 'validation_error', 'La nueva contraseña debe ser distinta de la actual.');
+  }
+  await userModel.updatePasswordHash(user.id, await hashPassword(input.newPassword));
+  await refreshModel.revokeAllForUser(user.id);
+  return startSession(user);
 }
