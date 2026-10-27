@@ -58,7 +58,14 @@ export class AudioService {
         if (Date.now() > parseInt(expires, 10)) return false; // Expiró
         const dataToSign = `${fileName}:${expires}`;
         const expectedSignature = crypto.createHmac('sha256', this.SECRET_KEY).update(dataToSign).digest('hex');
-        return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+        
+        try {
+            const a = Buffer.from(signature);
+            const b = Buffer.from(expectedSignature);
+            return a.length === b.length && crypto.timingSafeEqual(a, b);
+        } catch {
+            return false;
+        }
     }
 
     public async getLocalCatalog(): Promise<LocalTrackMetadata[]> {
