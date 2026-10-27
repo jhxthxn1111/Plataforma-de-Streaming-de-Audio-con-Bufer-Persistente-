@@ -3,14 +3,19 @@ import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app';
 import { closePool } from '../db/pool';
-import * as playbackModel from '../models/playback-event.model.ts';
-import { playbackQueue } from '../services/playback.service';
 import { signAccessToken } from '../utils/tokens';
+import { playbackQueue } from '../services/playback.service';
 
-// El modelo se simula: aquí se prueba la ruta y la cola, no la base de datos.
-vi.mock('../models/playback-event.model', () => ({
-  insertMany: vi.fn().mockResolvedValue(0),
+// Declaramos el mock usando vi.hoisted para asegurar el espía correcto antes de las importaciones
+const { insertManyMock } = vi.hoisted(() => ({
+  insertManyMock: vi.fn().mockResolvedValue(0),
 }));
+
+vi.mock('../models/playback-event.model', () => ({
+  insertMany: insertManyMock,
+}));
+
+import * as playbackModel from '../models/playback-event.model';
 
 const app = createApp();
 const userId = randomUUID();
@@ -63,8 +68,8 @@ describe('POST /analytics/events', () => {
     expect(res.body).toEqual({ accepted: 2 });
 
     await playbackQueue.flush();
-    expect(playbackModel.insertMany).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(playbackModel.insertMany).mock.calls[0]?.[0]).toHaveLength(2);
+    expect(insertManyMock).toHaveBeenCalledTimes(1);
+    expect(insertManyMock.mock.calls[0]?.[0]).toHaveLength(2);
   });
 
   it('usa el usuario del token y no el que venga en el body', async () => {
@@ -75,7 +80,7 @@ describe('POST /analytics/events', () => {
       .send({ userId: otro, events: [{ ...event, userId: otro }] });
 
     await playbackQueue.flush();
-    const guardados = vi.mocked(playbackModel.insertMany).mock.calls[0]?.[0] ?? [];
+    const guardados = insertManyMock.mock.calls[0]?.[0] ?? [];
     expect(guardados[0]?.userId).toBe(userId);
     expect(guardados[0]?.userId).not.toBe(otro);
   });
