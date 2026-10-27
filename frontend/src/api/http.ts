@@ -75,7 +75,7 @@ http.interceptors.response.use(
 
     const config = error.config;
     const status = error.response?.status;
-    const isAuthRoute = config.url?.startsWith('/auth/') ?? false;
+    const isAuthRoute = /^\/auth\/(login|register|refresh|logout)$/.test(config.url ?? '');
 
     // 1) Access token vencido: refrescar una vez y repetir la petición.
     if (status === 401 && !config._retriedAuth && !isAuthRoute) {

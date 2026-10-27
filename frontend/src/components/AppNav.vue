@@ -12,13 +12,12 @@ const emit = defineEmits<{ logout: [] }>();
 <template>
   <nav class="nav" aria-label="Principal">
     <RouterLink :to="{ name: 'menu' }" class="brand">
-      <IconGlyph name="wave" :size="26" />
       <span>Música</span>
     </RouterLink>
 
     <ul class="links">
-      <li>
-      </li>
+      <li><RouterLink :to="{ name: 'menu' }">Inicio</RouterLink></li>
+      <li><RouterLink :to="{ name: 'profile' }">Mi perfil</RouterLink></li>
     </ul>
 
     <div class="account">
@@ -75,7 +74,7 @@ const emit = defineEmits<{ logout: [] }>();
   background: var(--surface-2);
   color: var(--ink);
 }
-.links a.router-link-active {
+.links a.router-link-exact-active {
   background: var(--ink);
   color: var(--surface);
 }

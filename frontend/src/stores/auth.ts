@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import * as authApi from '@/api/auth';
-import type { LoginRequest, RegisterRequest, User } from '@/api/contracts';
+import type { ChangePasswordRequest, LoginRequest, RegisterRequest, UpdateProfileRequest, User } from '@/api/contracts';
 import { toAppError } from '@/api/errors';
 import { tokenStore } from '@/api/tokenStore';
 
@@ -64,6 +64,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Devuelve el mensaje de error, o null si salió bien. */
+  async function updateProfile(data: UpdateProfileRequest): Promise<string | null> {
+    try {
+      user.value = await authApi.updateProfile(data);
+      return null;
+    } catch (e) {
+      return toAppError(e).message;
+    }
+  }
+
+  /** Devuelve el mensaje de error, o null si salió bien. */
+  async function changePassword(data: ChangePasswordRequest): Promise<string | null> {
+    try {
+      const session = await authApi.changePassword(data);
+      user.value = session.user;
+      return null;
+    } catch (e) {
+      return toAppError(e).message;
+    }
+  }
+
   async function logout(): Promise<void> {
     try {
       await authApi.logout();
@@ -79,5 +100,5 @@ export const useAuthStore = defineStore('auth', () => {
     status.value = 'anonymous';
   }
 
-  return { user, status, loading, error, isAuthenticated, isAdmin, restore, login, register, logout, clearSession };
+  return { user, status, loading, error, isAuthenticated, isAdmin, restore, login, register, updateProfile, changePassword, logout, clearSession };
 });

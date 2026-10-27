@@ -68,3 +68,8 @@ export async function rotate(
 export async function revokeFamily(familyId: string): Promise<void> {
   await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL', [familyId]);
 }
+
+/** Cierra todas las sesiones de una cuenta (por ejemplo, tras cambiar la contraseña). */
+export async function revokeAllForUser(userId: string): Promise<void> {
+  await pool.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+}
