@@ -2,6 +2,9 @@ import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import { getCleanBaseUrl, getStreamUrl } from '../services/audioUrl';
 import { useOfflineCacheStore } from './offlineCache.store';
+import { useAuthStore } from './auth';
+import { sendPlaybackEvents } from '../api/analytics';
+import { PlaybackTracker } from '../services/playbackTracker';
 
 export interface Track {
     id: string;
@@ -23,6 +26,8 @@ const audio = new Audio();
 audio.preload = 'none';
 audio.crossOrigin = 'anonymous';
 let listenersAttached = false;
+/** Registra lo que se escucha para las estadísticas de consumo. */
+const tracker = new PlaybackTracker(sendPlaybackEvents);
 
 export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     const offline = useOfflineCacheStore();
@@ -186,6 +191,23 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
         audio.volume = isMuted.value ? 0 : volume.value;
 
+        // Estadísticas de consumo. Van antes que el resto de listeners: 'ended' debe cerrar
+        // la sesión de la canción antes de que nextTrack() arranque la siguiente.
+        const auth = useAuthStore();
+        watch(() => auth.user?.id ?? null, (userId) => tracker.setOwner(userId), { immediate: true });
+        tracker.start();
+        audio.addEventListener('playing', () => {
+            const track = currentTrack.value;
+            tracker.onPlay({ key: track.fileName, title: track.title, artist: track.artist }, audio.currentTime);
+        });
+        audio.addEventListener('timeupdate', () => tracker.onTimeUpdate(audio.currentTime));
+        audio.addEventListener('pause', () => tracker.onPause(audio.currentTime));
+        audio.addEventListener('seeked', () => tracker.onSeeked(audio.currentTime));
+        audio.addEventListener('ended', () => tracker.onEnded(audio.currentTime));
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') void tracker.checkpoint(audio.currentTime);
+        });
+
         audio.addEventListener('loadedmetadata', () => {
             duration.value = Number.isFinite(audio.duration) ? audio.duration : 0;
             if (resumeTime > 0 && resumeTime < audio.duration) {
@@ -340,6 +362,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
     // Función que apaga por completo el motor al salir de la AppNav
     const stopAudio = () => {
+        void tracker.stop(audio.currentTime);
         audio.pause();
         audio.currentTime = 0;
         isPlaying.value = false;
@@ -404,6 +427,7 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
     return {
         catalog, currentTrack, isPlaying, isBuffering, currentTime, duration, bufferedPercentage, bufferedRanges, progressPercentage, volume, isMuted, isShuffle, repeatMode, streamError, activeFilter, isFromCache,
+        flushPlaybackStats: () => tracker.flush(),
         fetchLocalCatalog, playTrack, togglePlay, stopAudio, seek, setVolume, toggleMute, nextTrack, prevTrack, toggleShuffle, toggleRepeat,
     };
 });

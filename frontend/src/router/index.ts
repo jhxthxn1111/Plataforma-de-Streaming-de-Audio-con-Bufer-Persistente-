@@ -32,6 +32,7 @@ export const router = createRouter({
       meta: { requiresAuth: true },
       children: [
         { path: '', name: 'menu', component: () => import('@/views/MenuVista.vue'), meta: { title: 'Inicio' } },
+        { path: 'estadisticas', name: 'stats', component: () => import('@/views/EstadisticasVista.vue'), meta: { title: 'Mis estadísticas' } },
         { path: 'perfil', name: 'profile', component: () => import('@/views/ProfileVista.vue'), meta: { title: 'Mi perfil' } },
         { path: 'sin-acceso', name: 'forbidden', component: () => import('@/views/ForbiddenView.vue'), meta: { title: 'Sin acceso' } },
       ],

@@ -17,6 +17,7 @@ const emit = defineEmits<{ logout: [] }>();
 
     <ul class="links">
       <li><RouterLink :to="{ name: 'menu' }">Inicio</RouterLink></li>
+      <li><RouterLink :to="{ name: 'stats' }">Estadísticas</RouterLink></li>
       <li><RouterLink :to="{ name: 'profile' }">Mi perfil</RouterLink></li>
     </ul>
 

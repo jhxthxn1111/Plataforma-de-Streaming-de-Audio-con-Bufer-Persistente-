@@ -102,6 +102,8 @@ export type PlaybackEventType = z.infer<typeof playbackEventTypeSchema>;
 
 export const playbackEventSchema = z.object({
   trackId: z.string(),
+  trackTitle: z.string().max(200).optional(),
+  trackArtist: z.string().max(200).optional(),
   type: playbackEventTypeSchema,
   positionSec: z.number().nonnegative(),
   listenedSec: z.number().nonnegative(),
