@@ -40,6 +40,20 @@ VITE_USE_MOCK=false
 VITE_API_BASE_URL=http://localhost:3000
 ```
 
+## Estadísticas de consumo
+
+El frontend registra lo que se escucha (`play`, `progress` cada 15 s, `pause`, `seek`, `complete`) y lo envía en lotes; el backend lo guarda en `playback_events` y lo resume por usuario.
+
+| Método | Ruta | Respuesta |
+|---|---|---|
+| POST | `/analytics/events` | `202` con `{ accepted }`. Lotes de hasta 100 eventos; se guardan en segundo plano (`BatchQueue`) |
+| GET | `/analytics/summary?days=7&tz=America/Bogota` | `200` con `{ totalListenedSec, totalPlays, completionRate, distinctTracks, daily, topTracks }`. `422` si `days` no está entre 1 y 30 o `tz` no es una zona IANA |
+
+- `listenedSec` de cada evento es el tiempo escuchado **desde el evento anterior**; el total es la suma.
+- Los días se cortan en la zona horaria `tz` (la del navegador): escuchar a las 9 p. m. en Colombia cuenta como hoy, no como mañana en UTC. Los días sin escucha llegan con `0`.
+- El `userId` sale siempre del token: cada persona solo ve su consumo.
+- Cada evento guarda la clave de la canción (su nombre de archivo), título y artista, así que el catálogo en archivos no necesita filas en `tracks` (migración `002`).
+
 ## Scripts
 
 | Comando | Qué hace |
