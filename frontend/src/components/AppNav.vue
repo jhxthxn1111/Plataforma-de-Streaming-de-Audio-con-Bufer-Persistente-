@@ -20,6 +20,7 @@ const emit = defineEmits<{ logout: [] }>();
       <li><RouterLink :to="{ name: 'playlists' }">Playlists</RouterLink></li>
       <li><RouterLink :to="{ name: 'stats' }">Estadísticas</RouterLink></li>
       <li><RouterLink :to="{ name: 'profile' }">Mi perfil</RouterLink></li>
+      <li v-if="auth.isAdmin"><RouterLink :to="{ name: 'admin' }">Administración</RouterLink></li>
     </ul>
 
     <div class="account">

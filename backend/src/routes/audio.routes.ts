@@ -6,6 +6,7 @@ import { AppError } from '../errors/AppError';
 import { authenticate } from '../middlewares/authenticate';
 import { AudioError, AudioService } from '../services/audio.service';
 import { logger } from '../utils/logger';
+import { streamMetrics } from '../utils/stream-metrics';
 
 const router = Router();
 const audioService = new AudioService();
@@ -67,6 +68,8 @@ router.get('/stream/:fileName', async (req: Request, res: Response, next: NextFu
             res.destroy(error);
         });
         result.stream.pipe(res);
+        // Cuenta los bytes de audio entregados (lo muestra el panel de administración).
+        result.stream.on('data', (chunk: string | Buffer) => streamMetrics.addBytes(Buffer.byteLength(chunk)));
     } catch (error) {
         next(toHttpError(error));
     }
