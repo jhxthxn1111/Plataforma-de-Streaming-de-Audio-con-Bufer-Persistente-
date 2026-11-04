@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { env } from '../config/env';
 
 export interface AudioStreamResult {
     stream: fs.ReadStream;
@@ -19,9 +20,26 @@ export interface LocalTrackMetadata {
     accentColor: string;
 }
 
+/** Errores esperados del streaming. El mensaje es el código, para que sean fáciles de reconocer. */
+export type AudioErrorCode = 'FILE_NOT_FOUND' | 'RANGE_NOT_SATISFIABLE';
+
+export class AudioError extends Error {
+    readonly code: AudioErrorCode;
+
+    constructor(code: AudioErrorCode) {
+        super(code);
+        this.name = 'AudioError';
+        this.code = code;
+    }
+}
+
 export class AudioService {
-    // Clave secreta para firmar las URLs (en producción iría en el .env)
-    private readonly SECRET_KEY = process.env.AUDIO_SECRET_KEY || 'usc_ingenieria_secreta_2026';
+    /** Clave secreta para firmar las URLs. Sale del entorno (AUDIO_SECRET_KEY), nunca del código. */
+    private readonly SECRET_KEY: string;
+
+    constructor(secretKey: string = env.audioSecretKey) {
+        this.SECRET_KEY = secretKey;
+    }
 
     private getStorageDir(): string {
         const cwdStorage = path.resolve(process.cwd(), 'storage');
@@ -121,7 +139,7 @@ export class AudioService {
         try {
             await fs.promises.access(audioPath, fs.constants.F_OK);
         } catch {
-            throw new Error('FILE_NOT_FOUND');
+            throw new AudioError('FILE_NOT_FOUND');
         }
 
         const stat = await fs.promises.stat(audioPath);
@@ -142,7 +160,7 @@ export class AudioService {
             const end = Math.min(requestedEnd, fileSize - 1);
 
             if (isNaN(start) || isNaN(end) || start >= fileSize || start > end) {
-                throw new Error('RANGE_NOT_SATISFIABLE');
+                throw new AudioError('RANGE_NOT_SATISFIABLE');
             }
 
             const chunksize = (end - start) + 1;
