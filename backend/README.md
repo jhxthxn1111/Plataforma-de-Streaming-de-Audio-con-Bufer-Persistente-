@@ -7,6 +7,7 @@ API REST con Node.js, Express 5, TypeScript y PostgreSQL. Arquitectura **MVC** p
 1. Crea la base de datos local (una vez): `CREATE DATABASE musica;`
 2. Copia `.env.example` a `.env`, pon tu contraseña de PostgreSQL en `DATABASE_URL` y genera el secreto de los tokens:
    `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` → pégalo en `JWT_ACCESS_SECRET`.
+   Repite el comando para un segundo valor y pégalo en `AUDIO_SECRET_KEY` (firma las URLs de streaming). Sin ambas variables el servidor no arranca.
 3. Instala, migra y arranca:
 
 ```sh
@@ -39,6 +40,16 @@ Para probarlo con el frontend, en `frontend/.env.local`:
 VITE_USE_MOCK=false
 VITE_API_BASE_URL=http://localhost:3000
 ```
+
+## Audio
+
+| Método | Ruta | Acceso |
+|---|---|---|
+| GET | `/api/audio/tracks` | Requiere access token. Catálogo leído de `storage/` |
+| GET | `/api/audio/ticket/:fileName` | Requiere access token. Devuelve una URL firmada (HMAC-SHA256) válida 5 minutos |
+| GET | `/api/audio/stream/:fileName` | Sin `Authorization` (el `<audio>` no puede enviarlo): exige la firma del ticket. `206 Partial Content` con `Range` |
+
+Los errores de audio usan el mismo formato `{ code, message }` que el resto de la API (`invalid_signature` 401, `track_not_found` 404, `range_not_satisfiable` 416).
 
 ## Estadísticas de consumo
 

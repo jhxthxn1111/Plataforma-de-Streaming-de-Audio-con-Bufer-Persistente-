@@ -1,63 +1,74 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { AudioService } from '../services/audio.service';
+import { Router } from 'express';
+import type { NextFunction, Request, Response } from 'express';
+import { rateLimit } from 'express-rate-limit';
+import { env } from '../config/env';
+import { AppError } from '../errors/AppError';
+import { authenticate } from '../middlewares/authenticate';
+import { AudioError, AudioService } from '../services/audio.service';
+import { logger } from '../utils/logger';
 
 const router = Router();
 const audioService = new AudioService();
 
-router.get('/tracks', async (_req: Request, res: Response, next: NextFunction) => {
-    try {
-        const tracks = await audioService.getLocalCatalog();
-        res.status(200).json({ success: true, tracks });
-    } catch (error) {
-        next(error);
-    }
+const audioLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skip: () => env.nodeEnv === 'test',
+    handler: (_req, _res, next) => next(new AppError(429, 'rate_limited', 'Demasiadas peticiones. Espera un momento.')),
 });
 
-// NUEVO: Genera un ticket temporal (aquí iría el middleware de sesión en el futuro)
-router.get('/ticket/:fileName', (req: Request, res: Response) => {
+/** Traduce los errores del streaming al formato { code, message } que ya interpreta el frontend. */
+function toHttpError(error: unknown): unknown {
+    if (error instanceof AudioError) {
+        if (error.code === 'FILE_NOT_FOUND') return new AppError(404, 'track_not_found', 'Audio no encontrado en storage.');
+        return new AppError(416, 'range_not_satisfiable', 'Rango de bytes no válido.');
+    }
+    return error;
+}
+
+// El catálogo y los tickets exigen sesión. El streaming en sí no lleva Authorization (<audio> no puede enviarlo):
+// se protege con la URL firmada y temporal que solo entrega /ticket a quien tiene sesión.
+router.get('/tracks', authenticate, audioLimiter, async (_req: Request, res: Response) => {
+    const tracks = await audioService.getLocalCatalog();
+    res.status(200).json({ success: true, tracks });
+});
+
+router.get('/ticket/:fileName', authenticate, audioLimiter, (req: Request, res: Response) => {
     const fileName = req.params.fileName as string;
     const queryParams = audioService.generateSignedUrl(fileName);
-    res.status(200).json({ 
-        success: true, 
-        ticketUrl: `/api/audio/stream/${encodeURIComponent(fileName)}${queryParams}` 
+    res.status(200).json({
+        success: true,
+        ticketUrl: `/api/audio/stream/${encodeURIComponent(fileName)}${queryParams}`,
     });
 });
 
 router.get('/stream/:fileName', async (req: Request, res: Response, next: NextFunction) => {
+    const fileName = req.params.fileName as string;
+    const { expires, signature } = req.query;
+
+    if (typeof expires !== 'string' || typeof signature !== 'string' || !expires || !signature) {
+        next(new AppError(401, 'invalid_signature', 'Falta la firma de seguridad. Acceso denegado.'));
+        return;
+    }
+    if (!audioService.verifySignature(fileName, expires, signature)) {
+        next(new AppError(401, 'invalid_signature', 'URL expirada o firma inválida.'));
+        return;
+    }
+
     try {
-        const fileName = req.params.fileName as string;
-        const { expires, signature } = req.query;
-
-        // NUEVO: Validación estricta de la URL firmada
-        if (!expires || !signature || typeof expires !== 'string' || typeof signature !== 'string') {
-            res.status(401).json({ success: false, message: 'Falta firma de seguridad. Acceso denegado.' });
-            return;
-        }
-
-        if (!audioService.verifySignature(fileName, expires, signature)) {
-            res.status(401).json({ success: false, message: 'URL expirada o firma inválida.' });
-            return;
-        }
-
-        const range = req.headers.range as string | undefined;
-        const result = await audioService.getAudioStream(fileName, range);
-
+        const result = await audioService.getAudioStream(fileName, req.headers.range);
         res.writeHead(result.statusCode, result.headers);
-        result.stream.pipe(res);
-
-        result.stream.on('error', (err: any) => {
-            if (!res.headersSent) next(err);
+        // Si el cliente corta la conexión (cambia de canción, cierra la pestaña) se libera el archivo.
+        res.on('close', () => result.stream.destroy());
+        result.stream.on('error', (error: Error) => {
+            logger.error('error leyendo el audio', { fileName, error: error.message });
+            res.destroy(error);
         });
-    } catch (error: any) {
-        if (error.message === 'FILE_NOT_FOUND') {
-            res.status(404).json({ success: false, message: 'Audio no encontrado en storage.' });
-            return;
-        }
-        if (error.message === 'RANGE_NOT_SATISFIABLE') {
-            res.status(416).json({ success: false, message: 'Rango de bytes no válido.' });
-            return;
-        }
-        next(error);
+        result.stream.pipe(res);
+    } catch (error) {
+        next(toHttpError(error));
     }
 });
 

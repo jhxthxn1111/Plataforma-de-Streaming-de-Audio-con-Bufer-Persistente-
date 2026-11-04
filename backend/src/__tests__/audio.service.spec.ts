@@ -65,6 +65,12 @@ describe('AudioService · URLs firmadas', () => {
     expect(service.verifySignature('test.mp3', expires, 'a'.repeat(64))).toBe(false);
   });
 
+  it('rechaza una firma hecha con otro secreto', () => {
+    const otro = new AudioService('otro-secreto-de-prueba-0123456789abcdef-0123456789');
+    const { expires, signature } = parseTicket(otro.generateSignedUrl('test.mp3'));
+    expect(service.verifySignature('test.mp3', expires, signature)).toBe(false);
+  });
+
   it('rechaza una firma de largo distinto sin lanzar excepción', () => {
     const { expires } = parseTicket(service.generateSignedUrl('test.mp3'));
     expect(service.verifySignature('test.mp3', expires, 'corta')).toBe(false);

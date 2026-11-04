@@ -32,6 +32,7 @@ export const env = {
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   databaseUrl: required('DATABASE_URL'),
   accessTokenSecret: secret('JWT_ACCESS_SECRET'),
+  audioSecretKey: secret('AUDIO_SECRET_KEY'), // firma las URLs temporales de streaming
   accessTokenTtlSec: Number(process.env.ACCESS_TOKEN_TTL_SEC ?? 900), // 15 min
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7),
   cookieSecure,
