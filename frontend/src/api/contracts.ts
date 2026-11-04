@@ -97,6 +97,24 @@ export const streamUrlSchema = z.object({
 });
 export type StreamUrl = z.infer<typeof streamUrlSchema>;
 
+/** Canción del catálogo local (archivos en el servidor). */
+export const localTrackSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string(),
+  album: z.string(),
+  fileName: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  coverGradient: z.string(),
+  accentColor: z.string(),
+});
+export type LocalTrack = z.infer<typeof localTrackSchema>;
+
+export const localCatalogSchema = z.object({ success: z.literal(true), tracks: z.array(localTrackSchema) });
+
+/** Respuesta de /audio/ticket: una ruta firmada y temporal hacia /audio/stream. */
+export const streamTicketSchema = z.object({ success: z.literal(true), ticketUrl: z.string().min(1) });
+
 export const playbackEventTypeSchema = z.enum(['play', 'pause', 'progress', 'seek', 'complete']);
 export type PlaybackEventType = z.infer<typeof playbackEventTypeSchema>;
 
