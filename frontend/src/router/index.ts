@@ -34,6 +34,8 @@ export const router = createRouter({
         { path: '', name: 'menu', component: () => import('@/views/MenuVista.vue'), meta: { title: 'Inicio' } },
         { path: 'estadisticas', name: 'stats', component: () => import('@/views/EstadisticasVista.vue'), meta: { title: 'Mis estadísticas' } },
         { path: 'playlists', name: 'playlists', component: () => import('@/views/PlaylistsVista.vue'), meta: { title: 'Mis playlists' } },
+        // Solo administración: el guard de abajo manda a "Sin acceso" a quien no tenga el rol (el backend responde 403 igual).
+        { path: 'admin', name: 'admin', component: () => import('@/views/AdminVista.vue'), meta: { title: 'Administración', roles: ['admin'] } },
         { path: 'perfil', name: 'profile', component: () => import('@/views/ProfileVista.vue'), meta: { title: 'Mi perfil' } },
         { path: 'sin-acceso', name: 'forbidden', component: () => import('@/views/ForbiddenView.vue'), meta: { title: 'Sin acceso' } },
       ],

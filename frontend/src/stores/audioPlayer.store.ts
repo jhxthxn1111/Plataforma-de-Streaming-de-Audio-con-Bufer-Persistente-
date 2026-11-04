@@ -6,6 +6,7 @@ import { useOfflineCacheStore } from './offlineCache.store';
 import { useAuthStore } from './auth';
 import { sendPlaybackEvents } from '../api/analytics';
 import { PlaybackTracker } from '../services/playbackTracker';
+import { shouldRenewTicket } from '../services/ticketRenewal';
 
 export interface Track {
     id: string;
@@ -54,6 +55,9 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     let objectUrl: string | null = null;
     let loadedTrackId: string | null = null;
     let loadToken = 0;
+    // Renovación del ticket firmado (caduca a los 5 min): cuándo fue la última y dónde retomar.
+    let lastTicketRenewalAt = 0;
+    let pendingResume: { trackId: string; at: number; play: boolean } | null = null;
 
     /** Elige la fuente del audio: si está en disco usa IndexedDB; si no hay internet y no está en disco, bloquea el streaming */
     const loadSource = async (track: Track, silent = false): Promise<boolean> => {
@@ -119,6 +123,20 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         loadedTrackId = track.id;
         audio.load();
         return true;
+    };
+
+    /** El ticket firmado caducó (típico al saltar por una canción larga tras 5 min): pide uno nuevo y retoma donde iba. */
+    const renewTicketAndResume = async (resumeAt: number, wasPlaying: boolean) => {
+        const track = currentTrack.value;
+        isBuffering.value = true;
+        pendingResume = { trackId: track.id, at: resumeAt, play: wasPlaying };
+        const loaded = await loadSource(track); // no silencioso: si falla el ticket, el mensaje llega a streamError
+        if (loaded) return; // el resto ocurre en 'loadedmetadata'
+        if (pendingResume?.trackId === track.id) pendingResume = null;
+        if (currentTrack.value.id !== track.id) return; // la persona cambió de canción mientras tanto
+        isPlaying.value = false;
+        isBuffering.value = false;
+        streamError.value ??= 'No pudimos renovar el acceso al audio. Inténtalo de nuevo.';
     };
 
     const savePersistentState = () => {
@@ -216,6 +234,15 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
                 currentTime.value = resumeTime;
                 resumeTime = 0;
             }
+            const resume = pendingResume;
+            pendingResume = null;
+            if (resume && resume.trackId === currentTrack.value.id) {
+                if (resume.at > 0 && resume.at < audio.duration) {
+                    audio.currentTime = resume.at;
+                    currentTime.value = resume.at;
+                }
+                if (resume.play) void audio.play().catch(() => {});
+            }
             streamError.value = null;
             updateBufferProgress();
         });
@@ -242,6 +269,21 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         });
 
         audio.addEventListener('error', () => {
+            const wasPlaying = isPlaying.value;
+            const resumeAt = audio.currentTime > 0 ? audio.currentTime : currentTime.value;
+            const src = audio.getAttribute('src') ?? '';
+            if (shouldRenewTicket({
+                isFromCache: isFromCache.value,
+                isOnline: offline.isOnline,
+                hasStreamSource: /^https?:/.test(src),
+                mediaErrorCode: audio.error?.code ?? null,
+                lastRenewalAt: lastTicketRenewalAt,
+                now: Date.now(),
+            })) {
+                lastTicketRenewalAt = Date.now();
+                void renewTicketAndResume(resumeAt, wasPlaying);
+                return;
+            }
             isPlaying.value = false;
             isBuffering.value = false;
             streamError.value = !offline.isOnline && !isFromCache.value

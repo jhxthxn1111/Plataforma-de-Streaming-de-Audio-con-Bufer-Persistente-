@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { adminRouter } from './admin.routes';
 import { authRouter } from './auth.routes';
 import { healthRouter } from './health.routes';
 import audioRoutes from './audio.routes';
@@ -13,3 +14,4 @@ routes.use('/api/audio', audioRoutes);
 routes.use('/audio', audioRoutes);
 routes.use(playbackRouter);
 routes.use('/playlists', playlistRouter);
+routes.use(adminRouter);

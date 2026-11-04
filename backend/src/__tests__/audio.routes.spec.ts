@@ -7,6 +7,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { errorHandler } from '../middlewares/error';
 import audioRoutes from '../routes/audio.routes';
+import { streamMetrics } from '../utils/stream-metrics';
 import { signAccessToken } from '../utils/tokens';
 
 const app = express();
@@ -122,6 +123,13 @@ describe('GET /api/audio/stream/:fileName', () => {
     expect(res.headers['content-range']).toBe('bytes 0-99/1000');
     expect(res.headers['accept-ranges']).toBe('bytes');
     expect((res.body as Buffer).length).toBe(100);
+  });
+
+  it('suma al contador del panel los bytes de audio entregados', async () => {
+    streamMetrics.reset();
+    const ticket = await request(app).get('/api/audio/ticket/test.mp3').set(bearer);
+    await request(app).get(ticket.body.ticketUrl as string).set('Range', 'bytes=0-99').buffer(true).responseType('blob');
+    expect(streamMetrics.totalBytes()).toBe(100);
   });
 
   it('con ticket válido y rango fuera del archivo responde 416', async () => {
