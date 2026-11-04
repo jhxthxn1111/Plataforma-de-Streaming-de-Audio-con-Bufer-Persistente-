@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { describeCache, assembleTrackBlob } from '../services/cachedAudio';
 import { DownloadError, downloadTrack } from '../services/chunkDownloader';
 import { IndexedDbChunkStore, isIndexedDbAvailable } from '../services/chunkStore';
-import { getStreamUrl, getCleanBaseUrl } from '../services/audioUrl';
+import { requestSignedStreamUrl } from '../api/audio';
 import type { Track } from './audioPlayer.store';
 
 export type OfflineStatus = 'none' | 'partial' | 'complete' | 'downloading' | 'error';
@@ -112,17 +112,8 @@ export const useOfflineCacheStore = defineStore('offlineCache', () => {
     await requestPersistence();
 
     try {
-      // Pedir el ticket HMAC de seguridad antes de descargar
-      let signedUrl = getStreamUrl(key);
-      try {
-          const res = await fetch(`${getCleanBaseUrl()}/api/audio/ticket/${encodeURIComponent(key)}`);
-          const data = await res.json();
-          if (data.success && data.ticketUrl) {
-              signedUrl = `${getCleanBaseUrl()}${data.ticketUrl}`;
-          }
-      } catch (e) {
-          console.warn("No se pudo obtener firma para descarga offline", e);
-      }
+      // Sin ticket firmado el servidor rechaza la descarga: si falla, el error llega al catch de abajo.
+      const signedUrl = await requestSignedStreamUrl(key);
 
       await downloadTrack({
         key,

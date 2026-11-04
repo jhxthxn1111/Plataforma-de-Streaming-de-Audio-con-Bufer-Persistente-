@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
-import { getCleanBaseUrl, getStreamUrl } from '../services/audioUrl';
+import { getLocalCatalog, requestSignedStreamUrl } from '../api/audio';
+import { toAppError } from '../api/errors';
 import { useOfflineCacheStore } from './offlineCache.store';
 import { useAuthStore } from './auth';
 import { sendPlaybackEvents } from '../api/analytics';
@@ -54,20 +55,6 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
     let loadedTrackId: string | null = null;
     let loadToken = 0;
 
-    // Obtiene el ticket temporal con HMAC
-    const fetchSignedStreamUrl = async (fileName: string): Promise<string> => {
-        try {
-            const res = await fetch(`${getCleanBaseUrl()}/api/audio/ticket/${encodeURIComponent(fileName)}`);
-            const data = await res.json();
-            if (data.success && data.ticketUrl) {
-                return `${getCleanBaseUrl()}${data.ticketUrl}`;
-            }
-            throw new Error('Fallo al obtener firma de seguridad');
-        } catch {
-            return getStreamUrl(fileName);
-        }
-    };
-
     /** Elige la fuente del audio: si está en disco usa IndexedDB; si no hay internet y no está en disco, bloquea el streaming */
     const loadSource = async (track: Track, silent = false): Promise<boolean> => {
         const token = ++loadToken;
@@ -117,8 +104,18 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
         }
 
         isFromCache.value = false;
-        // Se usa el token HMAC para la reproducción online
-        audio.src = await fetchSignedStreamUrl(track.fileName);
+        // La reproducción online usa una URL firmada y temporal que entrega el servidor a quien tiene sesión.
+        let streamUrl: string;
+        try {
+            streamUrl = await requestSignedStreamUrl(track.fileName);
+        } catch (error) {
+            if (token !== loadToken) return false;
+            loadedTrackId = null;
+            if (!silent) streamError.value = toAppError(error).message;
+            return false;
+        }
+        if (token !== loadToken) return false;
+        audio.src = streamUrl;
         loadedTrackId = track.id;
         audio.load();
         return true;
@@ -134,7 +131,9 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
                 repeatMode: repeatMode.value,
                 isShuffle: isShuffle.value,
             }));
-        } catch {}
+        } catch {
+            // Almacenamiento lleno o bloqueado (modo privado): la reproducción sigue, solo no se recuerda el estado.
+        }
     };
 
     const updateBufferProgress = () => {
@@ -158,16 +157,16 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
 
     const fetchLocalCatalog = async () => {
         try {
-            const response = await fetch(`${getCleanBaseUrl()}/api/audio/tracks`);
-            if (!response.ok) return;
-            const data = await response.json();
-            if (Array.isArray(data.tracks) && data.tracks.length > 0) {
-                catalog.value = data.tracks;
-                const currentMatch = catalog.value.find(t => t.fileName === currentTrack.value.fileName || t.id === currentTrack.value.id);
-                if (currentMatch) currentTrack.value = currentMatch;
-                else if (catalog.value[0]) currentTrack.value = catalog.value[0];
-            }
-        } catch {}
+            const tracks = await getLocalCatalog();
+            if (tracks.length === 0) return;
+            catalog.value = tracks;
+            const currentMatch = catalog.value.find(t => t.fileName === currentTrack.value.fileName || t.id === currentTrack.value.id);
+            if (currentMatch) currentTrack.value = currentMatch;
+            else if (catalog.value[0]) currentTrack.value = catalog.value[0];
+        } catch (error) {
+            // Sin conexión es normal (la app funciona con lo guardado en disco): solo se avisa si estando en línea falló.
+            if (offline.isOnline) streamError.value = toAppError(error).message;
+        }
     };
 
     const initAudioEngine = () => {
@@ -187,7 +186,9 @@ export const useAudioPlayerStore = defineStore('audioPlayer', () => {
                 if (typeof parsed.isShuffle === 'boolean') isShuffle.value = parsed.isShuffle;
                 if (typeof parsed.currentTime === 'number') resumeTime = parsed.currentTime;
             }
-        } catch {}
+        } catch {
+            // Estado guardado corrupto: se arranca con los valores por defecto.
+        }
 
         audio.volume = isMuted.value ? 0 : volume.value;
 
