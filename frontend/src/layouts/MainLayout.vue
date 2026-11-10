@@ -33,7 +33,7 @@ async function handleLogout(): Promise<void> {
 }
 .content {
   overflow-y: auto;
-  padding: 2rem clamp(1rem, 4vw, 2.5rem);
+  padding: 2rem clamp(1rem, 4vw, 2.5rem) calc(var(--player-h) + 1.5rem);
 }
 .content:focus {
   outline: none;
@@ -58,7 +58,7 @@ async function handleLogout(): Promise<void> {
     grid-template-rows: auto minmax(0, 1fr);
   }
   .content {
-    padding: 1.25rem 1rem;
+    padding: 1.25rem 1rem calc(var(--player-h) + 1.25rem);
   }
 }
 </style>

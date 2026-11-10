@@ -173,7 +173,6 @@ const formatMegabytes = (bytes?: number): string => {
 .library {
   display: grid;
   gap: 2.5rem;
-  padding-bottom: calc(var(--player-h) + 1.5rem);
 }
 
 .block-head {
@@ -439,6 +438,29 @@ const formatMegabytes = (bytes?: number): string => {
   .row {
     grid-template-columns: 2rem minmax(0, 1.4fr) minmax(0, 1.6fr) 3.5rem;
     padding-inline: 0.75rem;
+  }
+}
+
+@media (hover: none) {
+  .fab {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .cards {
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 0.75rem;
+  }
+  .col-size,
+  .row-size {
+    display: none;
+  }
+  .tracklist-head,
+  .row {
+    grid-template-columns: 1.75rem minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 0.5rem;
   }
 }
 
