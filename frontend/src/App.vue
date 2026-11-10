@@ -2,12 +2,14 @@
 import { computed } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import PlayerBar from './components/PlayerBar.vue'
+import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
+const auth = useAuthStore()
 
 const showPlayer = computed(() => {
   const hiddenRoutes = ['/login', '/register', '/registro']
-  return !hiddenRoutes.includes(route.path)
+  return auth.isAuthenticated && !hiddenRoutes.includes(route.path)
 })
 </script>
 
