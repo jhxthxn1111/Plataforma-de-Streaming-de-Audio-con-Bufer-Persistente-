@@ -18,7 +18,9 @@ app.config.errorHandler = (error, _instance, info) => {
 
 const auth = useAuthStore();
 onSessionExpired(() => {
+  const hadSession = auth.isAuthenticated;
   auth.clearSession();
+  if (!hadSession) return;
   void router.replace({
     name: 'login',
     query: { redirect: router.currentRoute.value.fullPath, reason: 'expired' },
