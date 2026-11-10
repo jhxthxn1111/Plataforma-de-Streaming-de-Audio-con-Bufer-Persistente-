@@ -1,0 +1,72 @@
+# Despliegue en Render (https://render.com): base de datos PostgreSQL, API (Node) y frontend (sitio estático).
+# Todo en plan gratuito, pensado para MOSTRAR el proyecto: la PostgreSQL gratuita de Render caduca a los 30 días
+# de crearse (y se borra 14 días después). Crea el Blueprint cerca de la fecha de la presentación.
+# Si necesitas que dure más, cambia a Neon (gratis, sin vencimiento): ver docs/DESPLIEGUE.md.
+#
+# Variables con `sync: false`: Render las pide al crear el Blueprint, porque dependen de URLs que
+# todavía no existen.
+databases:
+  - name: musica-db
+    plan: free
+    region: oregon
+    databaseName: musica
+    user: musica
+    # Permite conectarte desde tu computador (psql, DBeaver, npm run make-admin). La API usa la conexión
+    # interna. La clave es larga y aleatoria; para cerrar el acceso externo deja la lista vacía: ipAllowList: []
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: demostración
+
+services:
+  - type: web
+    name: musica-api
+    runtime: node
+    plan: free
+    region: oregon # la misma que la base de datos, para usar la conexión interna
+    branch: main
+    rootDir: backend
+    # Solo despliega si el CI de GitHub (typecheck + tests + build) pasó.
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run build
+    # Las migraciones se aplican solas antes de arrancar (son idempotentes).
+    startCommand: npm run migrate:prod && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL # la conexión interna de la base de datos de arriba
+        fromDatabase:
+          name: musica-db
+          property: connectionString
+      - key: FRONTEND_URL # URL exacta del sitio estático, sin "/" al final
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: AUDIO_SECRET_KEY
+        generateValue: true
+      # Frontend y API quedan en dominios distintos: la cookie del refresh token debe poder viajar entre ellos.
+      - key: COOKIE_SAMESITE
+        value: none
+      - key: COOKIE_SECURE
+        value: true
+
+  - type: web
+    name: musica-web
+    runtime: static
+    branch: main
+    rootDir: frontend
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run build-only
+    staticPublishPath: dist
+    # Vue Router usa rutas como /estadisticas: toda ruta desconocida debe entregar index.html.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL # URL de la API, sin "/" al final. Ej.: https://musica-api.onrender.com
+        sync: false
+      - key: VITE_USE_MOCK
+        value: false
