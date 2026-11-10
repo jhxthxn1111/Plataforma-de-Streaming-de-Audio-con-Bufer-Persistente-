@@ -20,11 +20,7 @@ const showPlayer = computed(() => {
 
 html, body, #app {
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
-}
-
-aside, nav {
-  padding-bottom: 105px !important;
-  box-sizing: border-box;
 }
 </style>

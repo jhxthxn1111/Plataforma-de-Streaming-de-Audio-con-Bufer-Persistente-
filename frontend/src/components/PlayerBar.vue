@@ -249,6 +249,12 @@ const formatTime = (seconds: number): string => {
   user-select: none;
 }
 
+.track-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stream-error-banner {
   position: absolute;
   top: -28px;
@@ -260,6 +266,9 @@ const formatTime = (seconds: number): string => {
   padding: 4px 12px;
   border-radius: 6px 6px 0 0;
   white-space: nowrap;
+  max-width: 94vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .player-grid {
@@ -484,6 +493,71 @@ const formatTime = (seconds: number): string => {
   height: 12px;
   display: flex;
   align-items: center;
+}
+
+/* ---- Pantallas medianas: sin control de volumen (se usa el del dispositivo) ---- */
+@media (max-width: 1100px) {
+  .volume-wrapper {
+    display: none;
+  }
+}
+
+/* ---- Móvil / tablet: dos filas (canción + controles, y barra de progreso) ---- */
+@media (max-width: 860px) {
+  .spotify-player {
+    height: auto;
+    min-height: var(--player-h);
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .player-grid {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'meta controls'
+      'bar  bar';
+    gap: 2px 12px;
+  }
+  .now-playing {
+    grid-area: meta;
+    min-width: 0;
+    gap: 10px;
+  }
+  .cover-art {
+    width: 44px;
+    height: 44px;
+  }
+  .player-center {
+    display: contents;
+  }
+  .transport-controls {
+    grid-area: controls;
+    gap: 2px;
+    margin-bottom: 0;
+  }
+  /* Aleatorio y repetir son secundarios: se ocultan para que quepa en 360 px */
+  .transport-controls > .icon-btn:first-child,
+  .transport-controls > .icon-btn:last-child {
+    display: none;
+  }
+  .playback-bar {
+    grid-area: bar;
+  }
+  .progress-wrapper {
+    height: 24px; /* área táctil más cómoda para arrastrar */
+  }
+  .player-right {
+    display: none;
+  }
+  .stream-error-banner {
+    top: -26px;
+  }
+}
+
+@media (min-width: 540px) and (max-width: 860px) {
+  /* En tablet sí hay espacio para aleatorio y repetir */
+  .transport-controls > .icon-btn:first-child,
+  .transport-controls > .icon-btn:last-child {
+    display: flex;
+  }
 }
 
 /* ---- Caché offline ---- */

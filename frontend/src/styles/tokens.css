@@ -21,6 +21,12 @@
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--signal) 45%, transparent);
 }
 
+@media (max-width: 860px) {
+  :root {
+    --player-h: 104px;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --paper: #0e1624;

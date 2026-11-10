@@ -41,7 +41,7 @@ const emit = defineEmits<{ logout: [] }>();
   flex-direction: column;
   gap: 1.5rem;
   height: 100%;
-  padding: 1.25rem 1rem;
+  padding: 1.25rem 1rem calc(var(--player-h) + 1rem);
   background: var(--surface);
   border-right: 1px solid var(--line);
 }
@@ -109,8 +109,13 @@ const emit = defineEmits<{ logout: [] }>();
   }
   .links {
     display: flex;
-    flex: 1;
+    order: 3;
+    flex: 1 0 100%;
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .links::-webkit-scrollbar {
+    display: none;
   }
   .links a {
     white-space: nowrap;
@@ -120,7 +125,7 @@ const emit = defineEmits<{ logout: [] }>();
     display: none;
   }
   .account {
-    margin: 0;
+    margin: 0 0 0 auto;
   }
 }
 </style>
