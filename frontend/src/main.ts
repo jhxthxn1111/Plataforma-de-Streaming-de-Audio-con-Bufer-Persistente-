@@ -3,6 +3,7 @@ import { createPinia } from 'pinia';
 import App from './App.vue';
 import { router } from './router';
 import { onSessionExpired } from './api/http';
+import { warmUpApi } from './api/warmup';
 import { useAuthStore } from './stores/auth';
 import './styles/tokens.css';
 import './styles/base.css';
@@ -25,3 +26,4 @@ onSessionExpired(() => {
 });
 
 app.mount('#app');
+warmUpApi();
