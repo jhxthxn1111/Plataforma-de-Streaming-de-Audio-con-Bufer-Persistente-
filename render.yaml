@@ -27,7 +27,8 @@ services:
     rootDir: backend
     # Solo despliega si el CI de GitHub (typecheck + tests + build) pasó.
     autoDeployTrigger: checksPass
-    buildCommand: npm ci && npm run build
+    # --include=dev: con NODE_ENV=production npm omitiría typescript y @types/node, que el build necesita.
+    buildCommand: npm ci --include=dev && npm run build
     # Las migraciones se aplican solas antes de arrancar (son idempotentes).
     startCommand: npm run migrate:prod && npm start
     healthCheckPath: /health
@@ -58,7 +59,7 @@ services:
     branch: main
     rootDir: frontend
     autoDeployTrigger: checksPass
-    buildCommand: npm ci && npm run build-only
+    buildCommand: npm ci --include=dev && npm run build-only
     staticPublishPath: dist
     # Vue Router usa rutas como /estadisticas: toda ruta desconocida debe entregar index.html.
     routes:
