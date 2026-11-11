@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
-import { RouterLink, useRoute, useRouter } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router';
 import { registerFormSchema } from '@/api/contracts';
+import { useCooldown } from '@/composables/useCooldown';
 import { useAuthStore } from '@/stores/auth';
 
 type Field = 'displayName' | 'email' | 'password' | 'confirmPassword';
 
 const auth = useAuthStore();
 const route = useRoute();
-const router = useRouter();
 
 const form = reactive({ displayName: '', email: '', password: '', confirmPassword: '' });
 const fieldErrors = ref<Partial<Record<Field, string>>>({});
 
-/** Solo se aceptan rutas internas, para evitar redirecciones abiertas. */
-function safeRedirect(value: unknown): string {
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/';
-}
+// Tras registrarse no se abre sesión: primero hay que abrir el enlace que llega al correo.
+const sentTo = ref<string | null>(null);
+const resendInfo = ref<string | null>(null);
+const resendError = ref<string | null>(null);
+const { remaining, start } = useCooldown(60);
 
 async function submit(): Promise<void> {
   const parsed = registerFormSchema.safeParse(form);
@@ -33,15 +34,43 @@ async function submit(): Promise<void> {
   fieldErrors.value = {};
   const { displayName, email, password } = parsed.data;
   if (await auth.register({ displayName, email, password })) {
-    await router.replace(safeRedirect(route.query.redirect));
+    form.password = '';
+    form.confirmPassword = '';
+    sentTo.value = email;
+    start();
   }
+}
+
+async function resend(): Promise<void> {
+  if (!sentTo.value) return;
+  resendError.value = await auth.resendVerification(sentTo.value);
+  resendInfo.value = resendError.value ? null : 'Listo: si el correo aún no está verificado, te enviamos otro.';
+  if (!resendError.value) start();
 }
 </script>
 
 <template>
   <section class="register">
-    <h1>Crear cuenta</h1>
+    <h1>{{ sentTo ? 'Revisa tu correo' : 'Crear cuenta' }}</h1>
 
+    <div v-if="sentTo" class="sent" role="status">
+      <p>
+        Te enviamos un enlace a <strong>{{ sentTo }}</strong>. Ábrelo para activar tu cuenta y después podrás iniciar sesión.
+      </p>
+      <p class="muted">Si no lo ves en unos minutos, revisa la carpeta de spam.</p>
+
+      <p v-if="resendInfo" class="notice">{{ resendInfo }}</p>
+      <p v-if="resendError" class="field-error" role="alert">{{ resendError }}</p>
+
+      <button type="button" class="btn" :disabled="remaining > 0" @click="resend">
+        {{ remaining > 0 ? `Reenviar correo (${remaining} s)` : 'Reenviar correo' }}
+      </button>
+      <RouterLink class="btn btn-primary" :to="{ name: 'login', query: route.query.redirect ? { redirect: String(route.query.redirect) } : {} }">
+        Ir a iniciar sesión
+      </RouterLink>
+    </div>
+
+    <template v-else>
     <form novalidate @submit.prevent="submit">
       <div class="field">
         <label for="displayName">Nombre</label>
@@ -107,6 +136,7 @@ async function submit(): Promise<void> {
       ¿Ya tienes cuenta?
       <RouterLink :to="{ name: 'login', query: route.query.redirect ? { redirect: String(route.query.redirect) } : {} }">Inicia sesión</RouterLink>
     </p>
+    </template>
   </section>
 </template>
 
@@ -126,5 +156,21 @@ form {
 .switch a {
   font-weight: 600;
   color: var(--signal);
+}
+.sent {
+  display: grid;
+  gap: 1rem;
+}
+.sent p {
+  margin: 0;
+}
+.sent a.btn {
+  text-decoration: none;
+  text-align: center;
+}
+.notice {
+  padding: 0.6rem 0.75rem;
+  border-left: 4px solid var(--buffer);
+  background: var(--surface);
 }
 </style>

@@ -5,7 +5,15 @@ import * as authController from '../controllers/auth.controller';
 import { AppError } from '../errors/AppError';
 import { authenticate } from '../middlewares/authenticate';
 import { validateBody } from '../middlewares/validate';
-import { changePasswordSchema, loginSchema, registerSchema, updateProfileSchema } from '../schemas/auth.schemas';
+import {
+  changePasswordSchema,
+  emailOnlySchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+  updateProfileSchema,
+  verifyEmailSchema,
+} from '../schemas/auth.schemas';
 
 export const authRouter = Router();
 
@@ -13,6 +21,16 @@ export const authRouter = Router();
 const credentialsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => env.nodeEnv === 'test',
+  handler: (_req, _res, next) => next(new AppError(429, 'rate_limited', 'Demasiados intentos. Espera unos minutos.')),
+});
+
+// Cada correo que se manda es un costo (y una molestia para el destinatario): límite más estricto.
+const mailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skip: () => env.nodeEnv === 'test',
@@ -31,3 +49,8 @@ authRouter.post('/auth/logout', authController.logout);
 authRouter.get('/auth/me', authenticate, authController.me);
 authRouter.patch('/auth/me', authenticate, validateBody(updateProfileSchema), authController.updateProfile);
 authRouter.post('/auth/password', credentialsLimiter, authenticate, validateBody(changePasswordSchema), authController.changePassword);
+
+authRouter.post('/auth/verify-email', credentialsLimiter, validateBody(verifyEmailSchema), authController.verifyEmail);
+authRouter.post('/auth/resend-verification', mailLimiter, validateBody(emailOnlySchema), authController.resendVerification);
+authRouter.post('/auth/forgot-password', mailLimiter, validateBody(emailOnlySchema), authController.forgotPassword);
+authRouter.post('/auth/reset-password', credentialsLimiter, validateBody(resetPasswordSchema), authController.resetPassword);

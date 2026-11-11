@@ -13,9 +13,7 @@ databases:
     user: musica
     # Permite conectarte desde tu computador (psql, DBeaver, npm run make-admin). La API usa la conexión
     # interna. La clave es larga y aleatoria; para cerrar el acceso externo deja la lista vacía: ipAllowList: []
-    ipAllowList:
-      - source: 0.0.0.0/0
-        description: demostración
+    ipAllowList: []
 
 services:
   - type: web

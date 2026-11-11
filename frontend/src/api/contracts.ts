@@ -60,6 +60,24 @@ export const changePasswordFormSchema = changePasswordRequestSchema
     message: 'Las contraseñas no coinciden',
   });
 
+/** El registro ya no abre sesión: primero hay que verificar el correo. */
+export const registerResponseSchema = z.object({ email: z.string().email(), message: z.string() });
+export type RegisterResponse = z.infer<typeof registerResponseSchema>;
+
+export const messageResponseSchema = z.object({ message: z.string() });
+
+/** Pedir otro correo de verificación o iniciar la recuperación de contraseña. */
+export const emailRequestSchema = z.object({ email: z.string().trim().email('Escribe un correo válido') });
+export type EmailRequest = z.infer<typeof emailRequestSchema>;
+
+/** Formulario de nueva contraseña (el token viaja aparte, desde el enlace del correo). */
+export const resetPasswordFormSchema = z
+  .object({ newPassword: registerRequestSchema.shape.password, confirmPassword: z.string() })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'Las contraseñas no coinciden',
+  });
+
 export const authResponseSchema = z.object({
   accessToken: z.string().min(1),
   expiresIn: z.number().int().positive(),

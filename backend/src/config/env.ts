@@ -26,6 +26,15 @@ if (sameSite === 'none' && !cookieSecure) {
   throw new Error('COOKIE_SAMESITE=none exige COOKIE_SECURE=true.');
 }
 
+// Correo: en producción Render bloquea el SMTP del plan gratuito, así que se usa la API HTTP de Brevo.
+const mailProvider = process.env.EMAIL_PROVIDER ?? (nodeEnv === 'production' ? '' : 'console');
+if (mailProvider !== 'console' && mailProvider !== 'brevo' && mailProvider !== 'gmail') {
+  throw new Error('EMAIL_PROVIDER debe ser "brevo" o "gmail" (producción) o "console" (desarrollo y pruebas).');
+}
+if (mailProvider === 'console' && nodeEnv === 'production') {
+  throw new Error('En producción EMAIL_PROVIDER no puede ser "console": los correos de verificación no se enviarían.');
+}
+
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? 3000),
@@ -37,4 +46,16 @@ export const env = {
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7),
   cookieSecure,
   cookieSameSite: sameSite,
+  mail: {
+    provider: mailProvider,
+    brevoApiKey: mailProvider === 'brevo' ? required('BREVO_API_KEY') : '',
+    gmailClientId: mailProvider === 'gmail' ? required('GMAIL_CLIENT_ID') : '',
+    gmailClientSecret: mailProvider === 'gmail' ? required('GMAIL_CLIENT_SECRET') : '',
+    gmailRefreshToken: mailProvider === 'gmail' ? required('GMAIL_REFRESH_TOKEN') : '',
+    fromEmail: mailProvider !== 'console' ? required('MAIL_FROM_EMAIL') : 'no-reply@localhost',
+    fromName: process.env.MAIL_FROM_NAME ?? 'Música',
+  },
+  emailVerifyTtlHours: 24,
+  passwordResetTtlMinutes: 60,
+  mailCooldownSec: Number(process.env.MAIL_COOLDOWN_SEC ?? 60), // mínimo entre dos correos del mismo tipo a una cuenta
 } as const;

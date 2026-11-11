@@ -1,10 +1,13 @@
 import {
   authResponseSchema,
+  messageResponseSchema,
+  registerResponseSchema,
   userSchema,
   type AuthResponse,
   type ChangePasswordRequest,
   type LoginRequest,
   type RegisterRequest,
+  type RegisterResponse,
   type UpdateProfileRequest,
   type User,
 } from './contracts';
@@ -18,12 +21,34 @@ export async function login(payload: LoginRequest): Promise<AuthResponse> {
   return parsed;
 }
 
-/** Crea una cuenta de oyente y deja la sesión iniciada. */
-export async function register(payload: RegisterRequest): Promise<AuthResponse> {
+/** Crea la cuenta de oyente y el servidor envía un correo de verificación. No abre sesión. */
+export async function register(payload: RegisterRequest): Promise<RegisterResponse> {
   const { data } = await http.post<unknown>('/auth/register', payload);
-  const parsed = authResponseSchema.parse(data);
-  tokenStore.set(parsed.accessToken);
-  return parsed;
+  return registerResponseSchema.parse(data);
+}
+
+/** Confirma el correo con el token del enlace. */
+export async function verifyEmail(token: string): Promise<void> {
+  const { data } = await http.post<unknown>('/auth/verify-email', { token });
+  messageResponseSchema.parse(data);
+}
+
+/** Pide otro correo de verificación. La respuesta es la misma exista o no la cuenta. */
+export async function resendVerification(email: string): Promise<void> {
+  const { data } = await http.post<unknown>('/auth/resend-verification', { email });
+  messageResponseSchema.parse(data);
+}
+
+/** Inicia la recuperación de contraseña. La respuesta es la misma exista o no la cuenta. */
+export async function forgotPassword(email: string): Promise<void> {
+  const { data } = await http.post<unknown>('/auth/forgot-password', { email });
+  messageResponseSchema.parse(data);
+}
+
+/** Fija la contraseña nueva con el token del correo. No abre sesión. */
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const { data } = await http.post<unknown>('/auth/reset-password', { token, newPassword });
+  messageResponseSchema.parse(data);
 }
 
 export async function logout(): Promise<void> {

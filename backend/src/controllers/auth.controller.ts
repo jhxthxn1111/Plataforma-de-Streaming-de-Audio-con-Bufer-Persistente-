@@ -1,7 +1,15 @@
 import type { Request, Response } from 'express';
 import { env } from '../config/env';
 import { AppError } from '../errors/AppError';
-import type { ChangePasswordInput, LoginInput, RegisterInput, UpdateProfileInput } from '../schemas/auth.schemas';
+import type {
+  ChangePasswordInput,
+  EmailOnlyInput,
+  LoginInput,
+  RegisterInput,
+  ResetPasswordInput,
+  UpdateProfileInput,
+  VerifyEmailInput,
+} from '../schemas/auth.schemas';
 import * as authService from '../services/auth.service';
 
 const REFRESH_COOKIE = 'refresh_token';
@@ -25,7 +33,28 @@ function sendSession(res: Response, status: number, result: authService.AuthResu
 }
 
 export async function register(req: Request, res: Response): Promise<void> {
-  sendSession(res, 201, await authService.register(req.body as RegisterInput));
+  const { email } = await authService.register(req.body as RegisterInput);
+  res.status(201).json({ email, message: 'Cuenta creada. Te enviamos un correo para verificarla.' });
+}
+
+export async function verifyEmail(req: Request, res: Response): Promise<void> {
+  await authService.verifyEmail((req.body as VerifyEmailInput).token);
+  res.json({ message: 'Correo verificado. Ya puedes iniciar sesión.' });
+}
+
+export async function resendVerification(req: Request, res: Response): Promise<void> {
+  await authService.resendVerification((req.body as EmailOnlyInput).email);
+  res.status(202).json({ message: 'Si la cuenta existe y falta verificarla, te enviamos un correo.' });
+}
+
+export async function forgotPassword(req: Request, res: Response): Promise<void> {
+  await authService.requestPasswordReset((req.body as EmailOnlyInput).email);
+  res.status(202).json({ message: 'Si el correo está registrado, te enviamos un enlace para cambiar la contraseña.' });
+}
+
+export async function resetPassword(req: Request, res: Response): Promise<void> {
+  await authService.resetPassword(req.body as ResetPasswordInput);
+  res.json({ message: 'Contraseña actualizada. Ya puedes iniciar sesión.' });
 }
 
 export async function login(req: Request, res: Response): Promise<void> {

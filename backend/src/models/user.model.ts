@@ -7,6 +7,7 @@ interface UserRow {
   display_name: string;
   password_hash: string;
   role: Role;
+  email_verified_at: Date | null;
 }
 
 export interface UserRecord {
@@ -15,12 +16,20 @@ export interface UserRecord {
   displayName: string;
   passwordHash: string;
   role: Role;
+  emailVerifiedAt: Date | null;
 }
 
-const COLUMNS = 'id, email, display_name, password_hash, role';
+const COLUMNS = 'id, email, display_name, password_hash, role, email_verified_at';
 
 function toRecord(row: UserRow): UserRecord {
-  return { id: row.id, email: row.email, displayName: row.display_name, passwordHash: row.password_hash, role: row.role };
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    passwordHash: row.password_hash,
+    role: row.role,
+    emailVerifiedAt: row.email_verified_at,
+  };
 }
 
 export async function findByEmail(email: string): Promise<UserRecord | null> {
@@ -51,4 +60,9 @@ export async function updateDisplayName(id: string, displayName: string): Promis
 
 export async function updatePasswordHash(id: string, passwordHash: string): Promise<void> {
   await pool.query('UPDATE users SET password_hash = $2 WHERE id = $1', [id, passwordHash]);
+}
+
+/** Marca el correo como verificado (si ya lo estaba, conserva la fecha original). */
+export async function markEmailVerified(id: string): Promise<void> {
+  await pool.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1', [id]);
 }

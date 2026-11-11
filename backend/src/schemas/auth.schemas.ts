@@ -26,3 +26,15 @@ export const changePasswordSchema = z.object({
   newPassword: registerSchema.shape.password,
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+const emailToken = z.string().trim().min(20, 'Enlace no válido').max(200, 'Enlace no válido');
+
+export const verifyEmailSchema = z.object({ token: emailToken });
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+/** Sirve para pedir otro correo de verificación y para iniciar la recuperación de contraseña. */
+export const emailOnlySchema = z.object({ email: registerSchema.shape.email });
+export type EmailOnlyInput = z.infer<typeof emailOnlySchema>;
+
+export const resetPasswordSchema = z.object({ token: emailToken, newPassword: registerSchema.shape.password });
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import { runMigrations } from '../db/migrate';
 import { closePool, pool } from '../db/pool';
 import { requireRole } from '../middlewares/authenticate';
+import { markVerified, registerAndLogin } from './helpers/verified-session';
 
 const app = createApp();
 const PREFIX = 'authtest-';
@@ -28,9 +29,9 @@ function cookieValue(setCookie: string): string {
   return (setCookie.split(';')[0] ?? '').replace('refresh_token=', '');
 }
 
+/** Cuenta ya verificada con la sesión abierta: `res` es la respuesta del login. */
 async function register(email = newEmail()): Promise<{ email: string; res: request.Response }> {
-  const res = await request(app).post('/auth/register').send({ displayName: 'Persona Prueba', email, password: PASSWORD });
-  return { email, res };
+  return { email, res: await registerAndLogin(app, { email, password: PASSWORD }) };
 }
 
 describe('autenticación', () => {
@@ -43,16 +44,22 @@ describe('autenticación', () => {
   });
 
   describe('registro', () => {
-    it('crea la cuenta como oyente, aunque el cliente pida otro rol, y no expone el hash', async () => {
+    it('crea la cuenta como oyente y sin verificar, aunque el cliente pida otro rol, y no abre sesión', async () => {
       const email = newEmail();
       const res = await request(app)
         .post('/auth/register')
         .send({ displayName: 'Ana', email, password: PASSWORD, role: 'admin' });
       expect(res.status).toBe(201);
-      expect(res.body.user).toMatchObject({ email, displayName: 'Ana', role: 'listener' });
-      expect(res.body.accessToken).toEqual(expect.any(String));
-      expect(res.body.expiresIn).toBe(env.accessTokenTtlSec);
+      expect(res.body).toEqual({ email, message: expect.any(String) });
+      expect(res.body.accessToken).toBeUndefined();
+      expect(res.headers['set-cookie']).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toMatch(/hash|\$argon2/i);
+
+      const { rows } = await pool.query<{ role: string; email_verified_at: Date | null }>(
+        'SELECT role, email_verified_at FROM users WHERE email = $1',
+        [email],
+      );
+      expect(rows[0]).toEqual({ role: 'listener', email_verified_at: null });
     });
 
     it('guarda la contraseña con Argon2id', async () => {
@@ -64,8 +71,9 @@ describe('autenticación', () => {
       expect(rows[0]?.password_hash.startsWith('$argon2id$')).toBe(true);
     });
 
-    it('entrega el refresh token en una cookie HttpOnly limitada a /auth', async () => {
+    it('al iniciar sesión entrega el refresh token en una cookie HttpOnly limitada a /auth', async () => {
       const { res } = await register();
+      expect(res.body.expiresIn).toBe(env.accessTokenTtlSec);
       const cookie = refreshCookie(res);
       expect(cookie).toMatch(/HttpOnly/i);
       expect(cookie).toMatch(/Path=\/auth/);
@@ -100,6 +108,23 @@ describe('autenticación', () => {
       expect(res.status).toBe(200);
       expect(res.body.user.email).toBe(email);
       expect(refreshCookie(res)).toMatch(/HttpOnly/i);
+    });
+
+    it('no deja entrar si el correo no está verificado, pero solo lo revela con la contraseña correcta', async () => {
+      const email = newEmail();
+      await request(app).post('/auth/register').send({ displayName: 'Ana', email, password: PASSWORD });
+
+      const blocked = await request(app).post('/auth/login').send({ email, password: PASSWORD });
+      expect(blocked.status).toBe(403);
+      expect(blocked.body.code).toBe('email_not_verified');
+      expect(blocked.body.accessToken).toBeUndefined();
+
+      const wrong = await request(app).post('/auth/login').send({ email, password: 'Incorrecta1' });
+      expect(wrong.status).toBe(401);
+      expect(wrong.body.code).toBe('invalid_credentials');
+
+      await markVerified(email);
+      expect((await request(app).post('/auth/login').send({ email, password: PASSWORD })).status).toBe(200);
     });
 
     it('da el mismo error si la contraseña es incorrecta o el correo no existe', async () => {
