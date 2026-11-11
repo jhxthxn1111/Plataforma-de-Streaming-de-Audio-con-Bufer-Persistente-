@@ -12,6 +12,8 @@ export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>('unknown');
   const loading = ref(false);
   const error = ref<string | null>(null);
+  /** El último login falló porque el correo aún no está verificado (para ofrecer reenviar el enlace). */
+  const needsVerification = ref(false);
 
   const isAuthenticated = computed(() => status.value === 'authenticated');
   const isAdmin = computed(() => user.value?.role === 'admin');
@@ -35,10 +37,28 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(credentials: LoginRequest): Promise<boolean> {
     loading.value = true;
     error.value = null;
+    needsVerification.value = false;
     try {
       const session = await authApi.login(credentials);
       user.value = session.user;
       status.value = 'authenticated';
+      return true;
+    } catch (e) {
+      const appError = toAppError(e);
+      error.value = appError.message;
+      needsVerification.value = appError.code === 'email_not_verified';
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /** Crea la cuenta; no inicia sesión: la persona debe abrir el enlace que llega a su correo. */
+  async function register(data: RegisterRequest): Promise<boolean> {
+    loading.value = true;
+    error.value = null;
+    try {
+      await authApi.register(data);
       return true;
     } catch (e) {
       error.value = toAppError(e).message;
@@ -48,19 +68,40 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(data: RegisterRequest): Promise<boolean> {
-    loading.value = true;
-    error.value = null;
+  /** Las cuatro acciones siguientes devuelven el mensaje de error, o null si salió bien. */
+  async function verifyEmail(token: string): Promise<string | null> {
     try {
-      const session = await authApi.register(data);
-      user.value = session.user;
-      status.value = 'authenticated';
-      return true;
+      await authApi.verifyEmail(token);
+      return null;
     } catch (e) {
-      error.value = toAppError(e).message;
-      return false;
-    } finally {
-      loading.value = false;
+      return toAppError(e).message;
+    }
+  }
+
+  async function resendVerification(email: string): Promise<string | null> {
+    try {
+      await authApi.resendVerification(email);
+      return null;
+    } catch (e) {
+      return toAppError(e).message;
+    }
+  }
+
+  async function forgotPassword(email: string): Promise<string | null> {
+    try {
+      await authApi.forgotPassword(email);
+      return null;
+    } catch (e) {
+      return toAppError(e).message;
+    }
+  }
+
+  async function resetPassword(token: string, newPassword: string): Promise<string | null> {
+    try {
+      await authApi.resetPassword(token, newPassword);
+      return null;
+    } catch (e) {
+      return toAppError(e).message;
     }
   }
 
@@ -100,5 +141,24 @@ export const useAuthStore = defineStore('auth', () => {
     status.value = 'anonymous';
   }
 
-  return { user, status, loading, error, isAuthenticated, isAdmin, restore, login, register, updateProfile, changePassword, logout, clearSession };
+  return {
+    user,
+    status,
+    loading,
+    error,
+    needsVerification,
+    isAuthenticated,
+    isAdmin,
+    restore,
+    login,
+    register,
+    verifyEmail,
+    resendVerification,
+    forgotPassword,
+    resetPassword,
+    updateProfile,
+    changePassword,
+    logout,
+    clearSession,
+  };
 });

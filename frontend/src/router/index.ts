@@ -26,6 +26,25 @@ export const router = createRouter({
       meta: { guestOnly: true, title: 'Crear cuenta' },
       children: [{ path: '', name: 'register', component: () => import('@/views/RegisterVista.vue') }],
     },
+    // Estas tres son públicas a propósito (sin guestOnly): el enlace del correo debe funcionar aunque ya haya una sesión abierta.
+    {
+      path: '/verificar',
+      component: () => import('@/layouts/AuthLayout.vue'),
+      meta: { title: 'Verificar correo' },
+      children: [{ path: '', name: 'verify-email', component: () => import('@/views/VerificarVista.vue') }],
+    },
+    {
+      path: '/olvide-contrasena',
+      component: () => import('@/layouts/AuthLayout.vue'),
+      meta: { title: 'Recuperar contraseña' },
+      children: [{ path: '', name: 'forgot-password', component: () => import('@/views/OlvidoVista.vue') }],
+    },
+    {
+      path: '/restablecer',
+      component: () => import('@/layouts/AuthLayout.vue'),
+      meta: { title: 'Nueva contraseña' },
+      children: [{ path: '', name: 'reset-password', component: () => import('@/views/RestablecerVista.vue') }],
+    },
     {
       path: '/',
       component: () => import('@/layouts/MainLayout.vue'),

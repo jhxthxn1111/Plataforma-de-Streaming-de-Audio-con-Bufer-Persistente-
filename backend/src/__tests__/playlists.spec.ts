@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../app';
 import { runMigrations } from '../db/migrate';
 import { closePool, pool } from '../db/pool';
+import { registerAndLogin } from './helpers/verified-session';
 
 const app = createApp();
 const PREFIX = 'playlisttest-';
@@ -13,7 +14,7 @@ let counter = 0;
 async function newToken(): Promise<string> {
   counter += 1;
   const email = `${PREFIX}${Date.now()}-${counter}@test.com`;
-  const res = await request(app).post('/auth/register').send({ displayName: 'Persona', email, password: PASSWORD });
+  const res = await registerAndLogin(app, { email, password: PASSWORD, displayName: 'Persona' });
   return res.body.accessToken as string;
 }
 

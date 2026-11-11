@@ -5,6 +5,7 @@ import { runMigrations } from '../db/migrate';
 import { closePool, pool } from '../db/pool';
 import { insertMany } from '../models/playback-event.model';
 import { streamMetrics } from '../utils/stream-metrics';
+import { markVerified, registerAndLogin } from './helpers/verified-session';
 
 /** Panel de administración: verifica el RBAC de punta a punta (token real, base real). */
 
@@ -24,18 +25,15 @@ interface Session {
 }
 
 async function registerListener(): Promise<Session> {
-  const res = await request(app)
-    .post('/auth/register')
-    .send({ displayName: 'Persona Prueba', email: newEmail(), password: PASSWORD });
-  expect(res.status).toBe(201);
+  const res = await registerAndLogin(app, { email: newEmail(), password: PASSWORD });
   return { id: res.body.user.id as string, token: res.body.accessToken as string };
 }
 
 /** El rol no se puede pedir por la API: se promociona en la base y se vuelve a iniciar sesión para que el token lo lleve. */
 async function createAdmin(): Promise<Session> {
   const email = newEmail();
-  const reg = await request(app).post('/auth/register').send({ displayName: 'Admin Prueba', email, password: PASSWORD });
-  await pool.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [reg.body.user.id]);
+  const first = await registerAndLogin(app, { email, password: PASSWORD, displayName: 'Admin Prueba' });
+  await pool.query(`UPDATE users SET role = 'admin' WHERE id = $1`, [first.body.user.id]);
   const login = await request(app).post('/auth/login').send({ email, password: PASSWORD });
   expect(login.body.user.role).toBe('admin');
   return { id: login.body.user.id as string, token: login.body.accessToken as string };
@@ -85,10 +83,15 @@ describe('GET /admin/overview', () => {
     });
 
     it('el rol sale del token, no del cliente: registrarse con role "admin" no abre el panel', async () => {
+      const email = newEmail();
       const res = await request(app)
         .post('/auth/register')
-        .send({ displayName: 'Intruso', email: newEmail(), password: PASSWORD, role: 'admin' });
-      const overview = await request(app).get('/admin/overview').set(bearer(res.body.accessToken as string));
+        .send({ displayName: 'Intruso', email, password: PASSWORD, role: 'admin' });
+      expect(res.status).toBe(201);
+      await markVerified(email);
+      const login = await request(app).post('/auth/login').send({ email, password: PASSWORD });
+      expect(login.body.user.role).toBe('listener');
+      const overview = await request(app).get('/admin/overview').set(bearer(login.body.accessToken as string));
       expect(overview.status).toBe(403);
     });
   });

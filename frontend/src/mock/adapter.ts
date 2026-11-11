@@ -1,6 +1,7 @@
 import { AxiosError, type AxiosAdapter, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { z } from 'zod';
 import {
+  emailRequestSchema,
   loginRequestSchema,
   registerRequestSchema,
   roleSchema,
@@ -24,6 +25,7 @@ interface MockUser {
   displayName: string;
   role: Role;
   password: string;
+  verified: boolean;
 }
 
 interface MockResult {
@@ -35,15 +37,22 @@ const SESSION_KEY = 'musica.mock.session'; // simula la cookie HttpOnly del refr
 const TOKEN_TTL_MS = 90_000;
 
 const BASE_USERS: MockUser[] = [
-  { id: 'u1', email: 'demo@musica.app', displayName: 'Demo', role: 'listener', password: 'Demo1234!' },
-  { id: 'u2', email: 'admin@musica.app', displayName: 'Administración', role: 'admin', password: 'Admin1234!' },
+  { id: 'u1', email: 'demo@musica.app', displayName: 'Demo', role: 'listener', password: 'Demo1234!', verified: true },
+  { id: 'u2', email: 'admin@musica.app', displayName: 'Administración', role: 'admin', password: 'Admin1234!', verified: true },
 ];
 
 // Cuentas creadas desde la pantalla de registro. Solo existe en el mock de desarrollo:
 // el backend real guarda un hash Argon2id, nunca la contraseña.
 const REGISTERED_KEY = 'musica.mock.users';
 const registeredSchema = z.array(
-  z.object({ id: z.string(), email: z.string(), displayName: z.string(), role: roleSchema, password: z.string() }),
+  z.object({
+    id: z.string(),
+    email: z.string(),
+    displayName: z.string(),
+    role: roleSchema,
+    password: z.string(),
+    verified: z.boolean().default(true), // las cuentas guardadas antes de existir la verificación cuentan como verificadas
+  }),
 );
 
 function loadRegistered(): MockUser[] {
@@ -58,6 +67,47 @@ function loadRegistered(): MockUser[] {
 }
 
 const USERS: MockUser[] = [...BASE_USERS, ...loadRegistered()];
+
+function persistUsers(): void {
+  localStorage.setItem(REGISTERED_KEY, JSON.stringify(USERS.filter((u) => !BASE_USERS.includes(u))));
+}
+
+// Enlaces de correo simulados. En el demo no se envía nada: el enlace se muestra en la consola del navegador.
+// Se guardan en localStorage para que sirvan aunque el enlace se abra en otra pestaña.
+export const MAIL_TOKENS_KEY = 'musica.mock.mail-tokens';
+const MAIL_TOKEN_TTL_MS = 60 * 60 * 1000;
+type MailPurpose = 'verify_email' | 'reset_password';
+const mailTokensSchema = z.array(
+  z.object({ token: z.string(), email: z.string(), purpose: z.enum(['verify_email', 'reset_password']), expiresAt: z.number() }),
+);
+type MailToken = z.infer<typeof mailTokensSchema>[number];
+
+function loadMailTokens(): MailToken[] {
+  try {
+    const raw = localStorage.getItem(MAIL_TOKENS_KEY);
+    return raw ? mailTokensSchema.parse(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function issueMailToken(user: MockUser, purpose: MailPurpose): void {
+  const token = newId();
+  // Solo vale el último enlace de cada tipo, igual que en el servidor real.
+  const kept = loadMailTokens().filter((t) => !(t.email === user.email && t.purpose === purpose));
+  localStorage.setItem(MAIL_TOKENS_KEY, JSON.stringify([...kept, { token, email: user.email, purpose, expiresAt: Date.now() + MAIL_TOKEN_TTL_MS }]));
+  const path = purpose === 'verify_email' ? '/verificar' : '/restablecer';
+  console.info(`[demo] Enlace de correo para ${user.email}: ${window.location.origin}${path}?token=${token}`);
+}
+
+/** Usa el token una sola vez: devuelve el correo de su dueño, o null si no existe, ya se usó o venció. */
+function consumeMailToken(token: string, purpose: MailPurpose): string | null {
+  const all = loadMailTokens();
+  const found = all.find((t) => t.token === token && t.purpose === purpose && t.expiresAt > Date.now());
+  if (!found) return null;
+  localStorage.setItem(MAIL_TOKENS_KEY, JSON.stringify(all.filter((t) => t !== found)));
+  return found.email;
+}
 
 const validTokens = new Map<string, { userId: string; expiresAt: number }>();
 
@@ -185,6 +235,9 @@ function route(config: InternalAxiosRequestConfig): MockResult {
     if (!parsed.success) return fail(422, 'validation_error', 'Revisa el correo y la contraseña.');
     const user = USERS.find((u) => u.email === parsed.data.email.toLowerCase() && u.password === parsed.data.password);
     if (!user) return fail(401, 'invalid_credentials', 'Correo o contraseña incorrectos.');
+    if (!user.verified) {
+      return fail(403, 'email_not_verified', 'Verifica tu correo para poder iniciar sesión. Revisa tu bandeja de entrada.');
+    }
     return issueSession(user);
   }
   if (method === 'post' && path === '/auth/register') {
@@ -201,11 +254,50 @@ function route(config: InternalAxiosRequestConfig): MockResult {
       displayName: parsed.data.displayName,
       role: 'listener',
       password: parsed.data.password,
+      verified: false,
     };
     USERS.push(created);
-    localStorage.setItem(REGISTERED_KEY, JSON.stringify(USERS.filter((u) => !BASE_USERS.includes(u))));
-    const session = issueSession(created);
-    return { ...session, status: 201 };
+    persistUsers();
+    issueMailToken(created, 'verify_email');
+    return { status: 201, data: { email, message: 'Cuenta creada. Te enviamos un correo para verificarla.' } };
+  }
+  if (method === 'post' && path === '/auth/verify-email') {
+    const parsed = z.object({ token: z.string().min(1) }).safeParse(readBody(config));
+    if (!parsed.success) return fail(422, 'validation_error', 'Enlace no válido');
+    const email = consumeMailToken(parsed.data.token, 'verify_email');
+    const user = USERS.find((u) => u.email === email);
+    if (!user) return fail(400, 'token_invalid', 'El enlace no es válido o ya venció. Solicita uno nuevo.');
+    user.verified = true;
+    persistUsers();
+    return { status: 200, data: { message: 'Correo verificado. Ya puedes iniciar sesión.' } };
+  }
+  if (method === 'post' && path === '/auth/resend-verification') {
+    const parsed = emailRequestSchema.safeParse(readBody(config));
+    if (!parsed.success) return fail(422, 'validation_error', 'Escribe un correo válido');
+    const user = USERS.find((u) => u.email === parsed.data.email.toLowerCase());
+    if (user && !user.verified) issueMailToken(user, 'verify_email');
+    return { status: 202, data: { message: 'Si la cuenta existe y falta verificarla, te enviamos un correo.' } };
+  }
+  if (method === 'post' && path === '/auth/forgot-password') {
+    const parsed = emailRequestSchema.safeParse(readBody(config));
+    if (!parsed.success) return fail(422, 'validation_error', 'Escribe un correo válido');
+    const user = USERS.find((u) => u.email === parsed.data.email.toLowerCase());
+    if (user) issueMailToken(user, 'reset_password');
+    return { status: 202, data: { message: 'Si el correo está registrado, te enviamos un enlace para cambiar la contraseña.' } };
+  }
+  if (method === 'post' && path === '/auth/reset-password') {
+    const parsed = z
+      .object({ token: z.string().min(1), newPassword: registerRequestSchema.shape.password })
+      .safeParse(readBody(config));
+    if (!parsed.success) return fail(422, 'validation_error', parsed.error.issues[0]?.message ?? 'Datos inválidos');
+    const email = consumeMailToken(parsed.data.token, 'reset_password');
+    const user = USERS.find((u) => u.email === email);
+    if (!user) return fail(400, 'token_invalid', 'El enlace no es válido o ya venció. Solicita uno nuevo.');
+    user.password = parsed.data.newPassword;
+    user.verified = true; // recibió el correo: la dirección queda comprobada
+    persistUsers();
+    localStorage.removeItem(SESSION_KEY); // cierra las sesiones, como el servidor real
+    return { status: 200, data: { message: 'Contraseña actualizada. Ya puedes iniciar sesión.' } };
   }
   if (method === 'post' && path === '/auth/refresh') {
     const userId = localStorage.getItem(SESSION_KEY);
